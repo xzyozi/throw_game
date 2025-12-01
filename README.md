@@ -4,18 +4,18 @@ This is a simple game.
 
 ## DEMO
 
-You can play the demo version by opening the `DEMO/index.html` file in your browser.
+You can play the demo version at the following link.
 
-[Play the demo](./DEMO/index.html)
+:arrow_forward: [**Play the demo**](https://xzyozi.github.io/throw_game/DEMO/index.html)
 
-### For the best experience, run a local server:
+### How to enable the demo link
 
-1.  Make sure you have Python installed.
-2.  Open a terminal in this directory.
-3.  Run the following command:
+For the link above to work, you need to enable GitHub Pages in your repository settings:
 
-    ```bash
-    python -m http.server
-    ```
-
-4.  Open your browser and go to `http://localhost:8000/DEMO/`.
+1.  Go to your repository settings on GitHub.
+2.  In the "Code and automation" section of the sidebar, click **Pages**.
+3.  Under "Build and deployment", under "Source", select **Deploy from a branch**.
+4.  Under "Branch", use the dropdown menu and select `main`.
+5.  Leave the folder as `/(root)`.
+6.  Click **Save**.
+7.  Wait a few minutes for your site to build and deploy. The link will then be active.
