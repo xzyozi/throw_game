@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Weapon Throwing RPG (Refactored)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&family=Reggae+One&display=swap');
+        
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        
+        #game-container {
+            background-color: #f0f9ff;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        #game-canvas {
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 80%, #8D6E63 80%, #795548 100%);
+        }
+
+        /* UI Styles */
+        .btn-primary { background: linear-gradient(to bottom, #fcd34d, #f59e0b); border-bottom: 4px solid #b45309; color: #451a03; font-weight: bold; transition: all 0.1s; }
+        .btn-primary:active { transform: translateY(2px); border-bottom: 0px solid transparent; }
+        .btn-secondary { background: #e2e8f0; border-bottom: 4px solid #94a3b8; color: #334155; font-weight: bold; transition: all 0.1s; }
+        .btn-secondary:active { transform: translateY(2px); border-bottom: 0px solid transparent; }
+
+        .weapon-btn { position: relative; transition: all 0.1s; border-bottom: 4px solid #b91c1c; /* red-700 */ }
+        .weapon-btn:active { transform: translateY(2px); border-bottom: 0px solid transparent; }
+        .weapon-btn:disabled { filter: grayscale(100%); cursor: not-allowed; opacity: 0.6; transform: none; border-bottom: 4px solid #555; }
+
+        .weapon-card { cursor: pointer; transition: all 0.1s; border: 2px solid transparent; background-color: #334155; }
+        .weapon-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .weapon-card:active { transform: scale(0.98); }
+        .weapon-card.equipped { opacity: 0.4; filter: grayscale(80%); cursor: default; transform: none; box-shadow: none; border: 2px solid #64748b; }
+        
+        .equipped-card { cursor: pointer; transition: all 0.1s; border: 2px solid #f59e0b; background-color: #1e293b; }
+        .equipped-card:hover { background-color: #334155; }
+
+        .cooldown-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(0, 0, 0, 0.6); transition: height 0.1s linear; }
+
+        .speech-bubble {
+            position: absolute; background: #fff; border: 2px solid #000; border-radius: 10px; padding: 8px 12px;
+            font-size: 14px; font-weight: bold; color: #333; max-width: 200px;
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.2); opacity: 0; transform: scale(0.8); pointer-events: none; z-index: 5;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .speech-bubble.show { opacity: 1; transform: scale(1); }
+        
+        #enemy-bubble { top: 20%; right: 15%; }
+        #enemy-bubble::after { content: ''; position: absolute; bottom: -8px; right: 20px; border-width: 8px 8px 0; border-style: solid; border-color: #000 transparent transparent transparent; }
+
+        .damage-text { position: absolute; font-weight: bold; pointer-events: none; text-shadow: 1px 1px 0 #fff; animation: floatUp 0.8s ease-out forwards; white-space: nowrap; }
+        
+        .skill-text {
+            position: absolute; font-family: 'Reggae One', cursive; font-size: 32px; color: #fbbf24;
+            text-shadow: 2px 2px 0 #000, 0 0 10px #b45309; pointer-events: none; animation: popSkill 1.2s ease-out forwards;
+            white-space: nowrap; z-index: 20; text-align: center;
+        }
+        
+        .special-move-text {
+            position: absolute; font-family: 'Reggae One', cursive; font-size: 32px; color: #fbbf24;
+            text-shadow: 2px 2px 0 #b91c1c, -1px -1px 0 #000; pointer-events: none; z-index: 10;
+            animation: skillCutIn 1.5s ease-out forwards; white-space: nowrap;
+        }
+        
+        #hit-flash { position: absolute; inset: 0; background: white; opacity: 0; pointer-events: none; transition: opacity 0.05s; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        @keyframes floatUp { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-30px) scale(1.2); opacity: 0; } }
+        @keyframes popSkill { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 20% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; } 40% { transform: translate(-50%, -50%) scale(1.0); opacity: 1; } 80% { transform: translate(-50%, -50%) scale(1.0); opacity: 1; } 100% { transform: translate(-50%, -100%) scale(1.2); opacity: 0; } }
+        @keyframes skillCutIn { 0% { transform: translate(-50%, -50%) scale(0.5) rotate(-5deg); opacity: 0; left: 50%; top: 40%; } 20% { transform: translate(-50%, -50%) scale(1.2) rotate(0deg); opacity: 1; left: 50%; top: 40%; } 80% { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); opacity: 1; left: 50%; top: 35%; } 100% { transform: translate(-50%, -50%) scale(1.5) rotate(5deg); opacity: 0; left: 50%; top: 30%; } }
+        @keyframes floating { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+        .title-logo { animation: floating 3s ease-in-out infinite; }
+    </style>
+</head>
+<body class="h-screen w-full flex flex-col items-center justify-center p-2 select-none">
+
+    <div id="game-container" class="relative w-full max-w-4xl h-full max-h-[600px] flex flex-col rounded-lg overflow-hidden">
+        
+        <!-- Title Screen -->
+        <div id="title-screen" class="absolute inset-0 bg-slate-800 z-50 flex flex-col items-center justify-center text-white">
+            <h1 class="text-5xl md:text-6xl font-bold mb-8 text-yellow-400 font-['Reggae_One'] title-logo text-center px-4 leading-tight" style="text-shadow: 4px 4px 0 #b45309;">WEAPON<br>THROW RPG</h1>
+            <div class="flex flex-col gap-4 w-64">
+                <button id="btn-start-game" class="btn-primary py-4 rounded text-xl shadow-lg">ゲーム開始</button>
+                <button id="btn-show-settings" class="btn-secondary py-3 rounded text-lg shadow-lg">設定 (CPU強度)</button>
+            </div>
+            <div class="mt-8 text-slate-400 text-sm">33 Unique Weapons</div>
+        </div>
+
+        <!-- Settings Screen -->
+        <div id="settings-screen" class="hidden absolute inset-0 bg-slate-800/95 z-50 flex flex-col items-center justify-center text-white p-4">
+            <h2 class="text-3xl font-bold mb-8 text-white border-b-4 border-yellow-500 pb-2">設定</h2>
+            <div class="w-full max-w-md bg-slate-700 p-6 rounded-lg shadow-xl mb-8">
+                <p class="mb-4 text-center font-bold text-lg text-blue-300">CPUの強さ</p>
+                <div class="flex justify-between gap-2">
+                    <button id="btn-diff-easy" class="diff-btn flex-1 py-3 rounded font-bold border-2 border-transparent transition-all bg-green-600 text-white opacity-50 hover:opacity-100" data-diff="easy">EASY</button>
+                    <button id="btn-diff-normal" class="diff-btn flex-1 py-3 rounded font-bold border-2 border-transparent transition-all bg-blue-600 text-white border-white shadow-lg transform scale-105" data-diff="normal">NORMAL</button>
+                    <button id="btn-diff-hard" class="diff-btn flex-1 py-3 rounded font-bold border-2 border-transparent transition-all bg-red-600 text-white opacity-50 hover:opacity-100" data-diff="hard">HARD</button>
+                </div>
+                <div id="diff-desc" class="mt-4 text-center text-sm text-slate-300 h-12 flex items-center justify-center">HP:300。標準的な強さです。</div>
+            </div>
+            <button id="btn-back-title" class="btn-secondary py-3 px-8 rounded text-lg w-64">戻る</button>
+        </div>
+
+        <!-- Weapon Select Screen -->
+        <div id="weapon-select-screen" class="hidden absolute inset-0 bg-slate-800 z-40 flex flex-col items-center text-white p-2 sm:p-4">
+            <div class="w-full flex justify-between items-end border-b-2 border-yellow-500 pb-2 mb-2">
+                <h2 class="text-2xl font-bold text-white">デッキ編成</h2>
+                <div class="text-sm text-slate-300">5つ選択してバトルへ</div>
+            </div>
+            <div class="w-full max-w-3xl mb-4">
+                <div id="equipped-weapons" class="flex justify-center gap-2 h-28 bg-slate-900/50 p-2 rounded-lg border border-slate-600"></div>
+            </div>
+            <div class="flex-1 w-full max-w-4xl overflow-y-auto bg-slate-900/30 p-2 rounded-lg border border-slate-700 mb-4 custom-scrollbar">
+                <div id="weapon-list" class="flex flex-col gap-4"></div>
+            </div>
+            <button id="btn-battle-start" class="btn-primary py-3 px-12 rounded text-xl shadow-lg w-full max-w-sm disabled:opacity-50 disabled:grayscale transition-all">バトル開始！</button>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="hidden absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center z-50 p-4">
+            <h2 id="result-title" class="text-5xl font-bold text-white mb-4 font-['Reggae_One']">VICTORY!</h2>
+            <div id="result-comment" class="text-white mb-8 text-center px-4 italic max-w-lg text-lg min-h-[3em]"></div>
+            <div class="flex gap-4">
+                <button id="btn-retry" class="btn-primary px-8 py-3 rounded text-lg shadow-lg">デッキ編成へ</button>
+                <button id="btn-to-title" class="btn-secondary px-8 py-3 rounded text-lg shadow-lg">タイトルへ</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div class="flex justify-between items-end p-2 bg-slate-800 text-white z-10 border-b border-slate-700 relative">
+            <div class="w-5/12">
+                <div class="flex justify-between text-sm mb-1"><span class="font-bold text-blue-300">YOU</span><span id="player-hp-text">100/100</span></div>
+                <div class="w-full bg-gray-700 h-4 rounded-full overflow-hidden border border-gray-600"><div id="player-hp-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 100%;"></div></div>
+            </div>
+            <div class="font-bold text-xl text-yellow-400 self-center mx-2">VS</div>
+            <div class="w-5/12 text-right">
+                <div class="flex justify-between text-sm mb-1"><span id="enemy-hp-text">100/100</span><span id="enemy-name" class="font-bold text-red-300">ENEMY</span></div>
+                <div class="w-full bg-gray-700 h-4 rounded-full overflow-hidden border border-gray-600"><div id="enemy-hp-bar" class="h-full bg-red-500 transition-all duration-300 ml-auto" style="width: 100%;"></div></div>
+            </div>
+        </div>
+
+        <!-- Main Canvas -->
+        <div class="relative flex-grow w-full bg-gray-200 overflow-hidden">
+            <canvas id="game-canvas" class="w-full h-full block"></canvas>
+            <div id="enemy-bubble" class="speech-bubble">...</div>
+            <div id="skill-display-container"></div>
+            <div id="hit-flash"></div>
+            <div id="damage-container" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="h-28 bg-slate-200 border-t-4 border-slate-300 p-2 flex items-center justify-between gap-2">
+            <div class="flex flex-col w-1/4 h-full justify-center pr-2 border-r border-slate-400/50">
+                <div class="mb-1">
+                    <div class="text-xs font-bold text-slate-600 mb-1 flex justify-between"><span>BP</span><span id="bp-text">0/10</span></div>
+                    <div class="w-full bg-gray-400 h-4 rounded border border-gray-500 relative overflow-hidden"><div id="bp-bar" class="h-full bg-yellow-400 transition-none absolute left-0 top-0" style="width: 0%;"></div></div>
+                </div>
+                <div class="text-[10px] text-slate-500 text-center mt-1">※武器ごとに確率でスキル発動</div>
+            </div>
+            <div class="flex-1 flex justify-around items-center h-full gap-1" id="weapon-buttons-container"></div>
+        </div>
+    </div>
+
+<script>
+/**
+ * Weapon Throwing RPG - Refactored Version
+ * + Added 9 New Weapons (Boomerang, Pilebunker, Beehive, Magnet, Oilpot, Cloud, Tuna, Sofa, Phone)
+ * + New Skills Implemented (Return, Pierce, Swarm, FireField, Freeze, Rest, Notify)
+ */
+
+const apiKey = ""; 
+
+// ==========================================================================================
+// 1. Data Layer
+// ==========================================================================================
+
+const Constants = { FPS: 60, MAX_BP: 10, GROUND_Y_RATIO: 0.8 };
+const DifficultySettings = {
+    easy: { hpMultiplier: 1.0, bpRateMultiplier: 0.8, actionSpeedMultiplier: 1.5, description: "HP:100。攻撃頻度も控えめです。初心者向け。" },
+    normal: { hpMultiplier: 3.0, bpRateMultiplier: 1.0, actionSpeedMultiplier: 1.0, description: "HP:300。標準的な強さです。" },
+    hard: { hpMultiplier: 5.0, bpRateMultiplier: 1.4, actionSpeedMultiplier: 0.7, description: "HP:500。激しい攻撃を仕掛けてきます。" }
+};
+const TrajectoryTypes = { STRAIGHT: 'Straight', PARABOLA: 'Parabola', HIGH_PARABOLA: 'HighParabola', SUBMARINE: 'Submarine', SATELLITE: 'Satellite' };
+
+const TrajectoryUI = {
+    [TrajectoryTypes.STRAIGHT]: { label: '直進', icon: '➡️', colorBg: 'bg-blue-600', colorText: 'text-blue-100', badgeColor: 'bg-blue-600' },
+    [TrajectoryTypes.PARABOLA]: { label: '放物線', icon: '⤴️', colorBg: 'bg-emerald-600', colorText: 'text-emerald-100', badgeColor: 'bg-emerald-600' },
+    [TrajectoryTypes.HIGH_PARABOLA]: { label: '高弾道', icon: '🚀', colorBg: 'bg-red-600', colorText: 'text-red-100', badgeColor: 'bg-red-600' },
+    [TrajectoryTypes.SUBMARINE]: { label: '潜航', icon: '⚓', colorBg: 'bg-indigo-600', colorText: 'text-indigo-100', badgeColor: 'bg-indigo-600' },
+    [TrajectoryTypes.SATELLITE]: { label: '衛星', icon: '🛰️', colorBg: 'bg-cyan-600', colorText: 'text-cyan-100', badgeColor: 'bg-cyan-600' }
+};
+
+// 全33種の武器データ
+const WeaponData = {
+    // --- Straight ---
+    dagger:   { name: "短剣", icon: "🔪", type: TrajectoryTypes.STRAIGHT, power: 12, durability: 12, cost: 1, speed: 1.5, cooldown: 0.5, heightOffset: 0, size: 24, color: '#94a3b8', label: '直', skill: { name: "早業", rate: 0.20, desc: "クールダウン0" } },
+    shuriken: { name: "手裏剣", icon: "⭐", type: TrajectoryTypes.STRAIGHT, power: 8, durability: 6, cost: 1, speed: 1.0, cooldown: 0.2, heightOffset: 0, size: 20, color: '#475569', label: '直', skill: { name: "分身", rate: 0.15, desc: "BP消費なし" } },
+    kunai:    { name: "クナイ", icon: "🗡️", type: TrajectoryTypes.STRAIGHT, power: 15, durability: 4, cost: 1, speed: 0.8, cooldown: 0.3, heightOffset: 0, size: 20, color: '#1e293b', label: '直', skill: { name: "急所突き", rate: 0.20, desc: "攻撃力2倍" } },
+    bow:      { name: "弓矢", icon: "🏹", type: TrajectoryTypes.STRAIGHT, power: 22, durability: 10, cost: 2, speed: 1.2, cooldown: 0.8, heightOffset: 0, size: 28, color: '#16a34a', label: '直', skill: { name: "強弓", rate: 0.15, desc: "弾速1.5倍＆威力UP" } },
+    boomerang:{ name: "ブーメラン", icon: "🪃", type: TrajectoryTypes.STRAIGHT, power: 15, durability: 20, cost: 2, speed: 1.5, cooldown: 0.8, heightOffset: 0, size: 26, color: '#f97316', label: '直', skill: { name: "往復", rate: 1.00, desc: "行きと帰りで攻撃" } }, // New
+    spear:    { name: "槍", icon: "🔱", type: TrajectoryTypes.STRAIGHT, power: 25, durability: 30, cost: 2, speed: 1.8, cooldown: 1.0, heightOffset: 0, size: 30, color: '#fcd34d', label: '直', skill: { name: "貫通", rate: 0.20, desc: "耐久力1.5倍" } },
+    dualblades:{ name: "双剣", icon: "⚔️", type: TrajectoryTypes.STRAIGHT, power: 20, durability: 20, cost: 3, speed: 1.5, cooldown: 1.0, heightOffset: 0, size: 26, color: '#06b6d4', label: '直', skill: { name: "連射", rate: 0.30, desc: "2連射" } },
+    rocket:   { name: "ロケット", icon: "🚀", type: TrajectoryTypes.STRAIGHT, power: 40, durability: 15, cost: 3, speed: 2.0, cooldown: 2.0, heightOffset: 0, size: 32, color: '#ef4444', label: '直', skill: { name: "加速", rate: 1.00, desc: "中盤から急加速" } },
+    magnet:   { name: "磁石", icon: "🧲", type: TrajectoryTypes.STRAIGHT, power: 5, durability: 50, cost: 3, speed: 0.8, cooldown: 1.5, heightOffset: 0, size: 32, color: '#ef4444', label: '直', skill: { name: "磁場", rate: 1.00, desc: "敵武器を吸い寄せる" } }, // New
+    ufo:      { name: "UFO", icon: "🛸", type: TrajectoryTypes.STRAIGHT, power: 20, durability: 20, cost: 3, speed: 1.5, cooldown: 1.5, heightOffset: 0, size: 34, color: '#a78bfa', label: '直', skill: { name: "ポータル", rate: 1.00, desc: "画面端をループ" } },
+    pilebunker:{ name: "パイル", icon: "🔩", type: TrajectoryTypes.STRAIGHT, power: 50, durability: 50, cost: 4, speed: 1.2, cooldown: 2.0, heightOffset: 0, size: 36, color: '#64748b', label: '直', skill: { name: "掘削", rate: 1.00, desc: "破壊時も減速せず貫通" } }, // New (Drill alternative)
+    tuna:     { name: "マグロ", icon: "🐟", type: TrajectoryTypes.STRAIGHT, power: 40, durability: 60, cost: 4, speed: 1.0, cooldown: 2.5, heightOffset: 0, size: 44, color: '#60a5fa', label: '直', skill: { name: "鮮度", rate: 1.00, desc: "敵武器を凍結" } }, // New
+    magic:    { name: "魔弾", icon: "🔮", type: TrajectoryTypes.STRAIGHT, power: 45, durability: 1, cost: 3, speed: 2.0, cooldown: 1.2, heightOffset: 0, size: 26, color: '#a855f7', label: '直', skill: { name: "魔力暴走", rate: 0.15, desc: "攻撃力1.5倍＆巨大化" } },
+    drill:    { name: "ドリル", icon: "🌀", type: TrajectoryTypes.SUBMARINE, power: 30, durability: 999, cost: 3, speed: 1.0, cooldown: 2.0, heightOffset: 0, size: 30, color: '#4b5563', label: '潜', skill: { name: "潜航", rate: 1.00, desc: "衝突無視で本体直撃" } },
+    fan:      { name: "扇", icon: "🍃", type: TrajectoryTypes.STRAIGHT, power: 10, durability: 20, cost: 5, speed: 0.5, cooldown: 4.0, heightOffset: 0, size: 36, color: '#86efac', label: '直', skill: { name: "追い風", rate: 1.00, desc: "敵武器を押し戻す" } },
+    gravity_orb:{ name: "重力玉", icon: "⚫", type: TrajectoryTypes.STRAIGHT, power: 10, durability: 30, cost: 4, speed: 0.8, cooldown: 3.0, heightOffset: 0, size: 40, color: '#1e1b4b', label: '直', skill: { name: "重力場", rate: 1.00, desc: "敵弾を吸い寄せる" } },
+    gatling:  { name: "ガトリング", icon: "🔫", type: TrajectoryTypes.STRAIGHT, power: 15, durability: 10, cost: 5, speed: 2.0, cooldown: 3.0, heightOffset: 0, size: 30, color: '#1f2937', label: '直', skill: { name: "乱射", rate: 1.00, desc: "3連射(確定)" } },
+    staff:    { name: "聖典", icon: "📖", type: TrajectoryTypes.STRAIGHT, power: 10, durability: 80, cost: 4, speed: 3.5, cooldown: 2.5, heightOffset: 0, size: 32, color: '#f472b6', label: '直', skill: { name: "祈り", rate: 0.25, desc: "BP2回復" } }, 
+    cloud:    { name: "雷雲", icon: "☁️", type: TrajectoryTypes.STRAIGHT, power: 30, durability: 40, cost: 5, speed: 0.5, cooldown: 3.0, heightOffset: -250, size: 50, color: '#64748b', label: '直', skill: { name: "落雷", rate: 1.00, desc: "真下に攻撃" } }, // New
+
+    // --- Parabola ---
+    oilpot:   { name: "油壺", icon: "🏺", type: TrajectoryTypes.PARABOLA, power: 20, durability: 1, cost: 2, speed: 1.8, cooldown: 1.0, heightOffset: 150, size: 26, color: '#7c2d12', label: '放', skill: { name: "炎上", rate: 1.00, desc: "着弾地点を燃やす" } }, // New
+    sword:    { name: "剣", icon: "🗡️", type: TrajectoryTypes.PARABOLA, power: 30, durability: 30, cost: 3, speed: 2.0, cooldown: 1.2, heightOffset: 150, size: 32, color: '#3b82f6', label: '放', skill: { name: "剣技", rate: 0.15, desc: "攻撃力1.3倍＆耐久UP" } },
+    shield:   { name: "盾", icon: "🛡️", type: TrajectoryTypes.PARABOLA, power: 5, durability: 120, cost: 3, speed: 2.8, cooldown: 2.0, heightOffset: 150, size: 48, color: '#64748b', label: '放', skill: { name: "鉄壁", rate: 0.20, desc: "耐久力2倍" } },
+    net:      { name: "ネット", icon: "🕸️", type: TrajectoryTypes.PARABOLA, power: 10, durability: 10, cost: 3, speed: 2.0, cooldown: 1.5, heightOffset: 150, size: 30, color: '#e2e8f0', label: '放', skill: { name: "粘着", rate: 1.00, desc: "敵に張り付き自爆" } },
+    squid:    { name: "イカ", icon: "🦑", type: TrajectoryTypes.PARABOLA, power: 25, durability: 20, cost: 3, speed: 2.0, cooldown: 1.5, heightOffset: 150, size: 30, color: '#f87171', label: '放', skill: { name: "目潰し", rate: 1.00, desc: "敵の狙いを狂わせる" } },
+    matryoshka:{ name: "マトリョーシカ", icon: "🪆", type: TrajectoryTypes.PARABOLA, power: 15, durability: 30, cost: 4, speed: 2.0, cooldown: 2.5, heightOffset: 150, size: 40, color: '#fca5a5', label: '放', skill: { name: "多重殻", rate: 1.00, desc: "3回まで中身が出て復活" } },
+    thunder:  { name: "雷鼓", icon: "⚡", type: TrajectoryTypes.PARABOLA, power: 25, durability: 25, cost: 4, speed: 2.2, cooldown: 2.0, heightOffset: 150, size: 32, color: '#ffff00', label: '放', skill: { name: "連鎖雷", rate: 1.00, desc: "衝突時に周囲へ放電" } },
+    ghostsword:{ name: "幽霊剣", icon: "👻", type: TrajectoryTypes.PARABOLA, power: 35, durability: 20, cost: 4, speed: 2.2, cooldown: 1.8, heightOffset: 150, size: 34, color: '#a855f7', label: '放', skill: { name: "幻影", rate: 0.40, desc: "軌道変化" } },
+    scythe:   { name: "鎌", icon: "⛏️", type: TrajectoryTypes.PARABOLA, power: 45, durability: 20, cost: 4, speed: 1.8, cooldown: 1.5, heightOffset: 150, size: 36, color: '#7c3aed', label: '放', skill: { name: "死霊蘇生", rate: 0.30, desc: "敵武器を奪う" } },
+    hammer:   { name: "槌", icon: "🔨", type: TrajectoryTypes.PARABOLA, power: 40, durability: 50, cost: 4, speed: 2.5, cooldown: 2.0, heightOffset: 150, size: 38, color: '#a855f7', label: '放', skill: { name: "粉砕", rate: 0.15, desc: "攻撃力1.5倍" } },
+    greatsword:{ name: "大剣", icon: "🗡", type: TrajectoryTypes.PARABOLA, power: 60, durability: 60, cost: 5, speed: 3.0, cooldown: 3.0, heightOffset: 150, size: 44, color: '#1d4ed8', label: '放', skill: { name: "一閃", rate: 0.15, desc: "巨大化＆攻撃力UP" } },
+
+    // --- High Parabola ---
+    beehive:  { name: "蜂の巣", icon: "🐝", type: TrajectoryTypes.HIGH_PARABOLA, power: 5, durability: 1, cost: 3, speed: 2.0, cooldown: 2.0, heightOffset: 300, size: 30, color: '#facc15', label: '高', skill: { name: "襲撃", rate: 1.00, desc: "破壊時に蜂が追撃" } }, // New
+    fireworks:{ name: "花火", icon: "🎆", type: TrajectoryTypes.HIGH_PARABOLA, power: 20, durability: 1, cost: 3, speed: 2.0, cooldown: 2.0, heightOffset: 350, size: 30, color: '#ef4444', label: '高', skill: { name: "分裂", rate: 1.00, desc: "消滅時に3分裂" } },
+    slot:     { name: "スロット", icon: "🎰", type: TrajectoryTypes.HIGH_PARABOLA, power: 30, durability: 30, cost: 4, speed: 2.5, cooldown: 3.0, heightOffset: 300, size: 36, color: '#facc15', label: '高', skill: { name: "運試し", rate: 1.00, desc: "ヒット時にランダム効果" } },
+    axe:      { name: "斧", icon: "🪓", type: TrajectoryTypes.HIGH_PARABOLA, power: 55, durability: 60, cost: 5, speed: 3.0, cooldown: 3.0, heightOffset: 300, size: 40, color: '#ef4444', label: '高', skill: { name: "狂戦士", rate: 0.15, desc: "攻撃力1.5倍＆弾速UP" } },
+    bomb:     { name: "爆弾", icon: "💣", type: TrajectoryTypes.HIGH_PARABOLA, power: 80, durability: 1, cost: 4, speed: 2.5, cooldown: 3.0, heightOffset: 300, size: 30, color: '#1f2937', label: '高', skill: { name: "大爆発", rate: 0.20, desc: "サイズ3倍" } },
+    rock:     { name: "岩石", icon: "🪨", type: TrajectoryTypes.HIGH_PARABOLA, power: 70, durability: 50, cost: 5, speed: 3.5, cooldown: 3.5, heightOffset: 350, size: 42, color: '#ca8a04', label: '高', skill: { name: "硬化", rate: 0.20, desc: "耐久力2倍" } },
+    meteor:   { name: "隕石", icon: "☄️", type: TrajectoryTypes.HIGH_PARABOLA, power: 99, durability: 80, cost: 6, speed: 4.0, cooldown: 5.0, heightOffset: 350, size: 50, color: '#dc2626', label: '高', skill: { name: "終末", rate: 0.10, desc: "攻撃力+100" } },
+    
+    // Satellite
+    bit:      { name: "ビット", icon: "🛰️", type: TrajectoryTypes.SATELLITE, power: 15, durability: 40, cost: 4, speed: 0, cooldown: 5.0, heightOffset: 0, size: 24, color: '#0ea5e9', label: '衛', skill: { name: "サテライト", rate: 1.00, desc: "周囲を旋回・迎撃" } }
+};
+
+// ==========================================================================================
+// 2. Core Layer (基盤システム)
+// ==========================================================================================
+
+class EventEmitter {
+    constructor() { this.events = {}; }
+    on(event, listener) { if (!this.events[event]) this.events[event] = []; this.events[event].push(listener); }
+    emit(event, data) { if (this.events[event]) this.events[event].forEach(listener => listener(data)); }
+}
+
+class GameEngine {
+    constructor() {
+        this.lastTime = 0; this.isRunning = false; this.updateCallback = null; this.drawCallback = null;
+        this.timeScale = 1.0; this.hitStopTimer = 0;
+    }
+    start(update, draw) { this.updateCallback = update; this.drawCallback = draw; this.isRunning = true; this.lastTime = performance.now(); requestAnimationFrame((t) => this.loop(t)); }
+    stop() { this.isRunning = false; }
+    triggerHitStop(duration) { this.hitStopTimer = duration; this.timeScale = 0.05; }
+    loop(timestamp) {
+        if (!this.isRunning) return;
+        const rawDt = (timestamp - this.lastTime) / 1000; this.lastTime = timestamp;
+        if (this.hitStopTimer > 0) { this.hitStopTimer -= rawDt; if (this.hitStopTimer <= 0) this.timeScale = 1.0; }
+        const dt = Math.min(rawDt, 0.1) * this.timeScale;
+        if (this.updateCallback) this.updateCallback(dt);
+        if (this.drawCallback) this.drawCallback();
+        requestAnimationFrame((t) => this.loop(t));
+    }
+}
+
+// ==========================================================================================
+// 3. Systems Layer (ロジック・計算)
+// ==========================================================================================
+
+class TrajectorySystem {
+    constructor() {
+        this.strategies = {
+            [TrajectoryTypes.STRAIGHT]: (sx, sy, tx, ty, p, h) => ({ x: sx + (tx - sx) * p, y: sy + (ty - sy) * p }),
+            [TrajectoryTypes.PARABOLA]: (sx, sy, tx, ty, p, h) => ({ x: sx + (tx - sx) * p, y: (sy + (ty - sy) * p) - (4 * h * p * (1 - p)) }),
+            [TrajectoryTypes.HIGH_PARABOLA]: (sx, sy, tx, ty, p, h) => ({ x: sx + (tx - sx) * p, y: (sy + (ty - sy) * p) - (4 * h * p * (1 - p)) }),
+            [TrajectoryTypes.SUBMARINE]: (sx, sy, tx, ty, p, h) => ({ x: sx + (tx - sx) * p, y: sy + 20 }) 
+        };
+    }
+    calculate(type, ...args) {
+        if (type === TrajectoryTypes.SATELLITE) return { x: args[0], y: args[1] };
+        return this.strategies[type](...args); 
+    }
+}
+
+class GeminiService {
+    constructor(apiKey) { this.apiKey = apiKey; }
+    async getBossName() { return Promise.resolve("暗黒騎士ガイア"); }
+    async getBossTaunt() { return Promise.resolve(null); }
+}
+
+class WeaponFactory {
+    static create(key, owner, startPos, targetPos, forceSkill = false, forceSkillName = null) {
+        const data = WeaponData[key];
+        let stats = { ...data }; let activeSkill = null; let scale = 1.0; 
+        
+        let checkSkill = false;
+        let skillName = null;
+
+        if (forceSkillName) {
+            checkSkill = true;
+            skillName = forceSkillName;
+        } else {
+            checkSkill = owner === 'player' ? forceSkill : (data.skill && (data.skill.rate === 1.00 || Math.random() < data.skill.rate));
+            if (checkSkill) skillName = data.skill.name;
+        }
+
+        if (checkSkill && skillName) {
+            activeSkill = skillName;
+            switch (skillName) {
+                case "急所突き": case "粉砕": stats.power = Math.floor(stats.power * 2.0); break;
+                case "鉄壁": case "硬化": case "安らぎ": stats.durability = Math.floor(stats.durability * 2.0); break;
+                case "貫通": stats.durability = Math.floor(stats.durability * 1.5); break;
+                case "強弓": case "狂戦士": stats.speed *= 0.7; stats.power = Math.floor(stats.power * 1.2); break;
+                case "大爆発": stats.size *= 3.0; scale = 3.0; break;
+                case "魔力暴走": case "一閃": stats.size *= 1.5; stats.power = Math.floor(stats.power * 1.5); scale = 1.5; break;
+                case "終末": stats.power += 100; break;
+                case "幻影": 
+                    const types = [TrajectoryTypes.STRAIGHT, TrajectoryTypes.PARABOLA, TrajectoryTypes.HIGH_PARABOLA];
+                    stats.type = types[Math.floor(Math.random() * types.length)];
+                    if(stats.type === TrajectoryTypes.STRAIGHT) stats.heightOffset = 0;
+                    if(stats.type === TrajectoryTypes.PARABOLA) stats.heightOffset = 150;
+                    if(stats.type === TrajectoryTypes.HIGH_PARABOLA) stats.heightOffset = 350;
+                    break;
+                case "多重殻": stats.layer = 3; break;
+                default: stats.power = Math.floor(stats.power * 1.2); break;
+            }
+        }
+        
+        if (activeSkill) {
+            stats.activatedSkill = activeSkill;
+            stats.color = "#fbbf24"; 
+        }
+
+        const w = new Weapon({ ...stats, owner, scale, startX: startPos.x, startY: startPos.y, targetX: targetPos.x, targetY: targetPos.y });
+        return w;
+    }
+}
+
+// ==========================================================================================
+// 4. Entities Layer (ゲームオブジェクト)
+// ==========================================================================================
+
+class GameObject { constructor(x, y) { this.x = x; this.y = y; this.isDead = false; } update(dt) {} draw(ctx) {} }
+class Unit extends GameObject { 
+    constructor(x, y, hp) { 
+        super(x, y); this.hp = hp; this.maxHp = hp; this.bp = 0; 
+        this.blindTimer = 0; 
+    } 
+    takeDamage(amount) { this.hp = Math.max(0, this.hp - amount); } 
+    heal(amount) { this.hp = Math.min(this.maxHp, this.hp + amount); } 
+    update(dt) {
+        if (this.blindTimer > 0) this.blindTimer -= dt;
+    }
+}
+class Player extends Unit { 
+    constructor(x, y, deck) { super(x, y, 100); this.deck = deck; this.cooldowns = {}; this.deck.forEach(k => this.cooldowns[k] = 0); } 
+    update(dt) { 
+        super.update(dt);
+        this.bp = Math.min(Constants.MAX_BP, this.bp + 2.5 * dt); 
+        for (let k in this.cooldowns) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt); 
+    } 
+}
+class Enemy extends Unit { 
+    constructor(x, y, difficultyConfig) { super(x, y, 100 * difficultyConfig.hpMultiplier); this.bpRate = 2.5 * difficultyConfig.bpRateMultiplier; this.actionSpeedMult = difficultyConfig.actionSpeedMultiplier; this.actionTimer = 2.0; this.name = "Unknown"; } 
+    update(dt) { 
+        super.update(dt);
+        this.bp = Math.min(Constants.MAX_BP, this.bp + this.bpRate * dt); this.actionTimer -= dt; 
+    } 
+}
+class Weapon extends GameObject { 
+    constructor(params) { 
+        super(params.startX, params.startY); 
+        Object.assign(this, params); 
+        this.currentDurability = this.durability; 
+        this.progress = 0; 
+        this.rotation = 0; 
+        this.rotSpeed = (this.owner === 'player' ? 1 : -1) * (5 + Math.random() * 5); 
+        this.trajectorySystem = new TrajectorySystem(); 
+        if (this.scale === undefined) this.scale = 1.0; 
+        
+        this.speedMultiplier = 1.0;
+        this.satelliteAngle = 0;
+        this.satelliteTime = 10.0; 
+        this.stickTarget = null;
+        this.stickTimer = 3.0;
+        this.returnPhase = false; // ブーメラン用
+        this.thunderTimer = 0; // 雷雲用
+        
+        if (this.activatedSkill === '多重殻' && this.layer === undefined) this.layer = 3;
+        
+        this.isPhysical = false;
+        this.vx = 0;
+        this.vy = 0;
+    } 
+    
+    update(dt, ownerUnit) {
+        // 粘着
+        if (this.stickTarget) {
+            if (this.stickTarget.isDead || this.stickTimer <= 0) {
+                this.isDead = true;
+                return;
+            }
+            this.stickTimer -= dt;
+            this.x = this.stickTarget.x;
+            this.y = this.stickTarget.y;
+            this.stickTarget.speedMultiplier = 0.2; 
+            return;
+        }
+
+        // サテライト
+        if (this.activatedSkill === 'サテライト') {
+            this.satelliteTime -= dt;
+            if (this.satelliteTime <= 0 || this.currentDurability <= 0) {
+                this.isDead = true;
+                return;
+            }
+            const radius = 70;
+            const speed = 3.0;
+            this.satelliteAngle += speed * dt;
+            if (ownerUnit) {
+                this.x = ownerUnit.x + Math.cos(this.satelliteAngle) * radius;
+                this.y = ownerUnit.y - 20 + Math.sin(this.satelliteAngle) * radius;
+            }
+            this.rotation = this.satelliteAngle;
+            return; 
+        }
+
+        // 雷雲 (落雷)
+        if (this.activatedSkill === '落雷') {
+            this.thunderTimer -= dt;
+            if (this.thunderTimer <= 0) {
+                this.thunderTimer = 0.5; // 0.5秒ごとに落雷判定
+                // WeaponはBattleSceneを知らないので、ここではフラグを立てるか、イベントを発火するのが綺麗だが
+                // 簡易的に自身の下に「見えない攻撃判定」を持つことで解決する、またはBattleScene側で処理する
+                // 今回はBattleScene.update内で雷雲を見つけて処理する方式にするため、ここは座標更新のみ
+            }
+        }
+        
+        // 物理モード
+        if (this.isPhysical) {
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.vy += 300 * dt; 
+            this.rotation += this.rotSpeed * dt;
+
+            const groundY = 480; 
+            if (this.y > groundY + 50) {
+                this.isDead = true;
+            }
+            
+            if (this.activatedSkill === 'ポータル') {
+                if (this.x < 0) this.x = 896;
+                else if (this.x > 896) this.x = 0;
+            }
+            return;
+        }
+
+        // 加速スキル
+        if (this.activatedSkill === '加速' && this.progress > 0.4) {
+            this.speedMultiplier = 3.0;
+        }
+        
+        const actualSpeed = this.speed / this.speedMultiplier;
+        this.progress += dt / actualSpeed; 
+        
+        // ブーメラン挙動 (往復)
+        if (this.activatedSkill === '往復' && this.progress >= 1.0) {
+             if (!this.returnPhase) {
+                 this.returnPhase = true;
+                 this.progress = 0;
+                 // ターゲットを反転
+                 const temp = this.startX;
+                 this.startX = this.targetX;
+                 this.targetX = temp;
+                 // 高さは維持
+             } else {
+                 this.isDead = true;
+             }
+        } else if (this.progress > 1.0) {
+            this.progress = 1.0; 
+        }
+        
+        const pos = this.trajectorySystem.calculate(this.type, this.startX, this.startY, this.targetX, this.targetY, this.progress, this.heightOffset); 
+        this.x = pos.x; this.y = pos.y; 
+        this.rotation += this.rotSpeed * dt;
+
+        // ポータル (ループ)
+        if (this.activatedSkill === 'ポータル') {
+            if (this.x < 0) this.x = 896;
+            else if (this.x > 896) this.x = 0;
+            
+            // 上下ループ（雷雲など）
+            const groundY = 480;
+            if (this.y < -200) this.y = groundY - 50;
+            else if (this.y > groundY) this.y = -100;
+        }
+        
+        // 磁場 (敵武器吸い寄せはBattleSceneで)
+    } 
+
+    draw(ctx, groundY) { 
+        ctx.save(); ctx.translate(this.x, this.y); 
+        if (this.type === TrajectoryTypes.SUBMARINE) ctx.globalAlpha = 0.6;
+        
+        ctx.save(); 
+        const groundDist = Math.max(0, groundY - this.y); 
+        const shadowScale = Math.max(0.5, 1 - groundDist / 300) * this.scale; 
+        const shadowAlpha = Math.max(0.1, 0.5 - groundDist / 300); 
+        ctx.fillStyle = `rgba(0,0,0,${shadowAlpha})`; 
+        ctx.setTransform(1, 0, 0, 1, this.x, groundY); 
+        ctx.scale(shadowScale, shadowScale * 0.5); 
+        ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill(); 
+        ctx.restore(); 
+        
+        ctx.rotate(this.rotation); ctx.scale(this.scale || 1.0, this.scale || 1.0); 
+        ctx.font = `${this.size}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; 
+        if (this.owner === 'enemy') ctx.scale(-1, 1); 
+        ctx.fillText(this.icon, 0, 0); 
+        
+        if (this.activatedSkill) { 
+            ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = 'rgba(255, 215, 0, 0.3)'; 
+            ctx.beginPath(); ctx.arc(0,0, this.size/1.2, 0, Math.PI*2); ctx.fill(); 
+            ctx.globalCompositeOperation = 'source-over'; 
+        } 
+        ctx.restore(); 
+        
+        const hpPct = this.currentDurability / this.durability; 
+        const scale = this.scale || 1.0; 
+        const barW = 30 * scale; 
+        ctx.fillStyle = "#333"; ctx.fillRect(this.x - barW/2, this.y - 25*scale, barW, 4*scale); 
+        ctx.fillStyle = hpPct > 0.5 ? "#22c55e" : "#ef4444"; ctx.fillRect(this.x - barW/2, this.y - 25*scale, barW * hpPct, 4*scale); 
+        ctx.globalAlpha = 1.0;
+    } 
+}
+class Particle extends GameObject { constructor(x, y, color) { super(x, y); this.color = color; const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 100 + 50; this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed; this.life = 0.5; this.maxLife = 0.5; this.size = Math.random() * 5 + 2; } update(dt) { this.x += this.vx * dt; this.y += this.vy * dt; this.vy += 300 * dt; this.life -= dt; if (this.life <= 0) this.isDead = true; } draw(ctx) { ctx.globalAlpha = this.life / this.maxLife; ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1.0; } }
+class FireField extends GameObject {
+    constructor(x, y, color) { super(x, y); this.color = color; this.life = 5.0; this.size = 40; }
+    update(dt) { this.life -= dt; if(this.life<=0) this.isDead = true; }
+    draw(ctx) {
+        ctx.save(); ctx.translate(this.x, this.y);
+        ctx.globalAlpha = 0.5 + Math.sin(Date.now()/100)*0.2;
+        ctx.fillStyle = this.color;
+        ctx.beginPath(); ctx.arc(0, 0, this.size, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
+}
+
+class Lightning extends GameObject {
+    constructor(x1, y1, x2, y2) {
+        super(x1, y1);
+        this.x2 = x2; this.y2 = y2;
+        this.life = 0.2;
+        this.segments = [];
+        this.generateSegments();
+    }
+    generateSegments() {
+        const dist = Math.sqrt((this.x2-this.x)**2 + (this.y2-this.y)**2);
+        const steps = Math.floor(dist / 10);
+        let currX = this.x; let currY = this.y;
+        for(let i=0; i<steps; i++) {
+            const t = (i+1)/steps;
+            const targetX = this.x + (this.x2-this.x)*t;
+            const targetY = this.y + (this.y2-this.y)*t;
+            const jitter = (Math.random()-0.5) * 20;
+            this.segments.push({x1:currX, y1:currY, x2:targetX + jitter, y2:targetY + jitter});
+            currX = targetX + jitter; currY = targetY + jitter;
+        }
+        this.segments.push({x1:currX, y1:currY, x2:this.x2, y2:this.y2});
+    }
+    update(dt) { this.life -= dt; if(this.life<=0) this.isDead = true; }
+    draw(ctx) {
+        ctx.save();
+        ctx.strokeStyle = "#ffff00";
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "#ffff00";
+        ctx.globalAlpha = this.life * 5;
+        ctx.beginPath();
+        this.segments.forEach(s => { ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); });
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// ==========================================================================================
+// 5. UI Layer (View & Input)
+// ==========================================================================================
+
+class WeaponSelectScene {
+    constructor(ui) {
+        this.ui = ui;
+        this.selectedWeapons = ['dagger', 'spear', 'sword', 'hammer', 'axe']; 
+        this.maxWeapons = 5;
+        this.container = document.getElementById('weapon-select-screen');
+        this.equippedContainer = document.getElementById('equipped-weapons');
+        this.listContainer = document.getElementById('weapon-list');
+        this.startBtn = document.getElementById('btn-battle-start');
+        
+        this.startBtn.onclick = () => {
+            if (this.selectedWeapons.length === 5) {
+                this.container.classList.add('hidden');
+                ui.events.emit('scene:battle_start', this.selectedWeapons);
+            }
+        };
+    }
+
+    show() { this.container.classList.remove('hidden'); this.render(); }
+
+    render() {
+        this.equippedContainer.innerHTML = '';
+        this.selectedWeapons = this.selectedWeapons.filter(key => WeaponData[key]);
+        this.selectedWeapons.forEach((key, index) => {
+            const data = WeaponData[key]; 
+            if (data) {
+                const card = this.createCard(data, true);
+                card.onclick = () => this.removeWeapon(index); 
+                this.equippedContainer.appendChild(card);
+            }
+        });
+        
+        for(let i = this.selectedWeapons.length; i < this.maxWeapons; i++) {
+            const empty = document.createElement('div');
+            empty.className = "flex-1 h-full bg-slate-800/50 rounded border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-500 text-xs";
+            empty.innerText = "Empty"; 
+            this.equippedContainer.appendChild(empty);
+        }
+
+        this.listContainer.innerHTML = '';
+        const orderedTypes = [TrajectoryTypes.STRAIGHT, TrajectoryTypes.PARABOLA, TrajectoryTypes.HIGH_PARABOLA, TrajectoryTypes.SUBMARINE, TrajectoryTypes.SATELLITE];
+
+        orderedTypes.forEach(typeId => {
+            const keys = Object.keys(WeaponData).filter(key => WeaponData[key].type === typeId);
+            if (keys.length > 0) {
+                const uiConfig = TrajectoryUI[typeId];
+                const section = document.createElement('div');
+                section.className = "mb-3 bg-slate-800/40 rounded-lg overflow-hidden border border-slate-700";
+                const header = document.createElement('div');
+                header.className = `${uiConfig.colorBg} ${uiConfig.colorText} px-3 py-1 text-xs font-bold flex items-center gap-2 shadow-sm`;
+                header.innerHTML = `<span>${uiConfig.icon}</span><span>${uiConfig.label}</span>`;
+                section.appendChild(header);
+                const grid = document.createElement('div');
+                grid.className = 'p-2 grid grid-cols-4 sm:grid-cols-5 gap-2';
+                
+                keys.forEach(key => {
+                    const data = WeaponData[key]; 
+                    const isEquipped = this.selectedWeapons.includes(key); 
+                    const card = this.createCard(data, false);
+                    if (isEquipped) card.classList.add('equipped'); else card.onclick = () => this.addWeapon(key);
+                    grid.appendChild(card);
+                });
+                section.appendChild(grid);
+                this.listContainer.appendChild(section);
+            }
+        });
+
+        this.startBtn.disabled = this.selectedWeapons.length !== 5;
+        this.startBtn.innerText = this.selectedWeapons.length === 5 ? "バトル開始！" : `あと ${5 - this.selectedWeapons.length} 個選択`;
+        if (this.selectedWeapons.length === 5) {
+            this.startBtn.classList.remove('opacity-50', 'grayscale'); this.startBtn.classList.add('animate-bounce');
+        } else {
+            this.startBtn.classList.add('opacity-50', 'grayscale'); this.startBtn.classList.remove('animate-bounce');
+        }
+    }
+
+    createCard(data, isCompact) {
+        if (!data) return document.createElement('div');
+        const div = document.createElement('div');
+        div.className = isCompact 
+            ? `equipped-card flex-1 h-full rounded p-1 flex flex-col items-center justify-center relative overflow-hidden border-2 border-slate-600` 
+            : `weapon-card rounded p-2 flex flex-col items-center justify-center relative overflow-hidden h-32 bg-slate-700 shadow-md`;
+        
+        const uiConfig = TrajectoryUI[data.type] || { badgeColor: 'bg-slate-500', label: '?' };
+        const badgeClass = `${uiConfig.badgeColor} text-white`;
+
+        let skillHtml = "";
+        if (data.skill && !isCompact) { 
+            const rate = Math.floor(data.skill.rate * 100); 
+            skillHtml = `<div class="w-full bg-slate-900/50 rounded px-1 py-0.5 mt-1 border border-white/10"><div class="flex justify-between items-center text-[9px] text-yellow-400 font-bold"><span>★${data.skill.name}</span><span>${rate}%</span></div><div class="text-[8px] text-slate-300 leading-tight truncate">${data.skill.desc}</div></div>`; 
+        }
+
+        if (isCompact) { 
+            div.innerHTML = `<div class="absolute top-0 right-0 px-1.5 py-0.5 text-[8px] font-bold ${badgeClass} rounded-bl shadow-sm">${uiConfig.label}</div><div class="text-2xl mb-1 filter drop-shadow-md">${data.icon}</div><div class="text-[10px] font-bold leading-none text-center text-white">${data.name}</div><div class="text-[8px] text-slate-300 mt-1">BP:${data.cost}</div>`; 
+        } else { 
+            div.innerHTML = `<div class="absolute top-0 right-0 px-1.5 py-0.5 text-[9px] font-bold ${badgeClass} rounded-bl shadow-sm">${uiConfig.label}</div><div class="text-2xl mb-1 filter drop-shadow-md">${data.icon}</div><div class="text-xs font-bold leading-none text-center text-white mb-1">${data.name}</div><div class="flex gap-1 justify-center w-full text-[9px] text-slate-300 bg-slate-800/30 rounded py-0.5 mb-0.5"><span class="flex items-center gap-0.5" title="攻撃力"><span class="text-red-400">⚔️</span>${data.power}</span><span class="flex items-center gap-0.5" title="耐久力"><span class="text-blue-400">🛡️</span>${data.durability}</span></div><div class="flex gap-1 justify-center w-full text-[9px] text-slate-300 bg-slate-800/30 rounded py-0.5"><span class="flex items-center gap-0.5" title="コスト"><span class="text-yellow-400">💎</span>${data.cost}</span><span class="flex items-center gap-0.5" title="速度"><span class="text-green-400">⏱️</span>${data.speed}</span></div>${skillHtml}`; 
+        }
+        div.style.borderBottom = `3px solid ${data.color}`; 
+        return div;
+    }
+    addWeapon(key) { if (this.selectedWeapons.length < this.maxWeapons && !this.selectedWeapons.includes(key)) { this.selectedWeapons.push(key); this.selectedWeapons.sort((a,b) => WeaponData[a].cost - WeaponData[b].cost); this.render(); } }
+    removeWeapon(index) { this.selectedWeapons.splice(index, 1); this.render(); }
+}
+
+class UIManager {
+    constructor(eventEmitter) {
+        this.events = eventEmitter;
+        this.elements = {
+            playerHpBar: document.getElementById('player-hp-bar'), playerHpText: document.getElementById('player-hp-text'),
+            enemyHpBar: document.getElementById('enemy-hp-bar'), enemyHpText: document.getElementById('enemy-hp-text'), enemyName: document.getElementById('enemy-name'),
+            bpBar: document.getElementById('bp-bar'), bpText: document.getElementById('bp-text'),
+            weaponButtons: document.getElementById('weapon-buttons-container'), enemyBubble: document.getElementById('enemy-bubble'),
+            specialMoveContainer: document.getElementById('skill-display-container'), damageContainer: document.getElementById('damage-container'), hitFlash: document.getElementById('hit-flash'),
+        };
+    }
+    initWeaponButtons(deck) {
+        this.elements.weaponButtons.innerHTML = '';
+        deck.forEach(key => {
+            const data = WeaponData[key]; 
+            if (!data) return; 
+            const btn = document.createElement('button');
+            btn.className = 'weapon-btn flex-1 h-full bg-white rounded border border-gray-300 shadow flex flex-col items-center justify-center overflow-hidden relative group';
+            const rate = data.skill ? Math.floor(data.skill.rate * 100) : 0; 
+            const skillBadge = rate > 0 ? `<div class="absolute top-0 left-0 p-0.5 text-[8px] font-bold text-yellow-400 bg-slate-900/80 rounded-br leading-none">${rate}%</div>` : '';
+            
+            // 修正: バトル画面のボタンにもタイプ色を適用
+            const uiConfig = TrajectoryUI[data.type] || { badgeColor: 'bg-slate-500', label: '?' };
+            
+            btn.innerHTML = `
+                <div class="absolute top-0 right-0 px-1 py-0.5 text-[8px] font-bold text-white ${uiConfig.badgeColor} rounded-bl leading-none shadow-sm">${uiConfig.label}</div>
+                ${skillBadge}
+                <div class="text-2xl mb-1 filter drop-shadow-sm">${data.icon}</div>
+                <div class="text-xs font-bold leading-none scale-90">${data.name}</div>
+                <div class="text-[9px] text-gray-500 scale-90">BP:${data.cost}</div>
+                <div class="cooldown-overlay" id="cd-${key}"></div>
+            `;
+            btn.onclick = () => this.events.emit('ui:throw_weapon', key); 
+            btn.id = `btn-${key}`; 
+            this.elements.weaponButtons.appendChild(btn);
+        });
+    }
+    update(player, enemy) {
+        this.updateBar(this.elements.playerHpBar, player.hp, player.maxHp); this.elements.playerHpText.innerText = `${Math.floor(player.hp)}/${player.maxHp}`;
+        this.updateBar(this.elements.enemyHpBar, enemy.hp, enemy.maxHp); this.elements.enemyHpText.innerText = `${Math.floor(enemy.hp)}/${enemy.maxHp}`;
+        this.updateBar(this.elements.bpBar, player.bp, Constants.MAX_BP); this.elements.bpText.innerText = `${Math.floor(player.bp)}/${Constants.MAX_BP}`;
+        if (enemy.name && this.elements.enemyName.innerText !== enemy.name) this.elements.enemyName.innerText = enemy.name;
+        player.deck.forEach(key => {
+            const btn = document.getElementById(`btn-${key}`); const overlay = document.getElementById(`cd-${key}`);
+            if (!btn || !overlay) return;
+            const data = WeaponData[key]; const cd = player.cooldowns[key]; const pct = (cd / data.cooldown) * 100; overlay.style.height = `${pct}%`;
+            btn.disabled = player.bp < data.cost || cd > 0;
+        });
+    }
+    updateBar(el, current, max) { el.style.width = `${Math.max(0, Math.min(100, (current / max) * 100))}%`; }
+    showFloatingText(x, y, text, color, isBig = false) {
+        const el = document.createElement('div'); el.className = 'damage-text'; el.innerText = text; el.style.left = `${x}px`; el.style.top = `${y}px`; el.style.color = color; if (isBig) el.style.fontSize = '24px';
+        this.elements.damageContainer.appendChild(el); setTimeout(() => el.remove(), 800);
+    }
+    showSkillCutIn(text, color) {
+        const el = document.createElement('div'); el.className = 'skill-text'; el.innerText = text; el.style.color = color; el.style.left = "50%"; el.style.top = "50%";
+        this.elements.specialMoveContainer.appendChild(el); setTimeout(() => el.remove(), 1200);
+    }
+    showBubble(target, text, duration = 3000) {
+        const el = this.elements.enemyBubble; if (!el) return; el.innerText = text; el.classList.add('show'); if (duration > 0) setTimeout(() => el.classList.remove('show'), duration);
+    }
+    triggerFlash() {
+        this.elements.hitFlash.style.opacity = 0.3; setTimeout(() => this.elements.hitFlash.style.opacity = 0, 50);
+    }
+}
+
+// ==========================================================================================
+// 6. Battle Scene
+// ==========================================================================================
+
+class BattleScene {
+    constructor(context) {
+        this.ctx = context;
+        this.engine = context.engine;
+        this.gemini = context.gemini;
+        this.ui = context.ui;
+        this.events = context.events;
+        
+        this.canvas = document.getElementById('game-canvas');
+        this.drawCtx = this.canvas.getContext('2d');
+        this.groundY = 0;
+
+        this.player = null;
+        this.enemy = null;
+        this.weapons = [];
+        this.particles = [];
+        this.fireFields = [];
+        this.difficulty = 'normal';
+
+        this.events.on('ui:throw_weapon', (key) => this.playerThrow(key));
+    }
+
+    init(difficulty, playerDeck) {
+        this.difficulty = difficulty; const diffConfig = DifficultySettings[difficulty];
+        this.player = new Player(50, 0, playerDeck); this.enemy = new Enemy(0, 0, diffConfig);
+        this.weapons = []; this.particles = []; this.fireFields = []; this.isBattleStarted = true;
+        this.ui.initWeaponButtons(playerDeck); this.resize();
+        window.addEventListener('resize', () => this.resize());
+        this.ui.elements.enemyName.innerText = "暗黒騎士ガイア"; this.enemy.name = "暗黒騎士ガイア";
+    }
+
+    resize() {
+        this.canvas.width = this.canvas.clientWidth;
+        this.canvas.height = this.canvas.clientHeight;
+        this.groundY = this.canvas.height * Constants.GROUND_Y_RATIO;
+        if (this.player) { this.player.y = this.groundY - 40; this.player.x = 60; }
+        if (this.enemy) { this.enemy.y = this.groundY - 40; this.enemy.x = this.canvas.width - 60; }
+    }
+
+    playerThrow(key, consumeCost = true) {
+        if (!this.isBattleStarted) return;
+        const data = WeaponData[key];
+        let cost = data.cost; let cooldown = data.cooldown;
+        
+        // スキル発動チェック
+        const isSkillTriggered = consumeCost && data.skill && (data.skill.rate === 1.00 || Math.random() < data.skill.rate);
+        
+        if (consumeCost) {
+            if (isSkillTriggered && data.skill.name === "分身") cost = 0;
+            if (this.player.bp < cost) return;
+            if (this.player.cooldowns[key] > 0) return;
+            this.player.bp -= cost;
+            if (isSkillTriggered && data.skill.name === "早業") cooldown = 0.1;
+            this.player.cooldowns[key] = cooldown;
+        }
+
+        if (isSkillTriggered) {
+            if (data.skill.name === "祈り") { this.player.bp = Math.min(Constants.MAX_BP, this.player.bp + 2); this.ui.showFloatingText(this.player.x, this.player.y - 60, "BP+2", "#fcd34d"); }
+            if (data.skill.name === "魂狩り") { this.player.heal(10); this.ui.showFloatingText(this.player.x, this.player.y - 60, "HP+10", "#a855f7"); }
+            if (data.skill.name === "連射") setTimeout(() => this.playerThrow(key, false), 200); 
+            if (data.skill.name === "乱射") { setTimeout(() => this.playerThrow(key, false), 150); setTimeout(() => this.playerThrow(key, false), 300); }
+            this.ui.showSkillCutIn(data.skill.name, "#fbbf24");
+        }
+
+        const weapon = WeaponFactory.create(key, 'player', {x: this.player.x + 30, y: this.player.y - 20}, {x: this.enemy.x, y: this.enemy.y - 20}, isSkillTriggered, isSkillTriggered ? data.skill.name : null);
+        this.weapons.push(weapon);
+    }
+
+    update(dt) {
+        if (!this.isBattleStarted) return;
+        this.player.update(dt); this.enemy.update(dt); this.updateEnemyAI(dt);
+        
+        // 重力スキル
+        this.weapons.forEach(w1 => {
+            if (w1.activatedSkill === "重力場" && !w1.isDead) {
+                this.weapons.forEach(w2 => {
+                    if (w2.owner !== w1.owner && !w2.isDead) {
+                        const dist = Math.sqrt((w1.x - w2.x)**2 + (w1.y - w2.y)**2);
+                        if (dist < 150) {
+                             const pullStrength = 2.0;
+                             w2.targetX += (w1.x - w2.x) * pullStrength * dt;
+                             w2.targetY += (w1.y - w2.y) * pullStrength * dt;
+                             w2.x += (w1.x - w2.x) * 5.0 * dt;
+                             w2.y += (w1.y - w2.y) * 5.0 * dt;
+                        }
+                    }
+                });
+            }
+            
+            // 磁場 (Magnet)
+            if (w1.activatedSkill === "磁場" && !w1.isDead) {
+                this.weapons.forEach(w2 => {
+                    if (w2.owner !== w1.owner && !w2.isDead) {
+                        const dist = Math.sqrt((w1.x - w2.x)**2 + (w1.y - w2.y)**2);
+                        if (dist < 150) {
+                             // 相手を吸い寄せる
+                             w2.x += (w1.x - w2.x) * 2.0 * dt;
+                             w2.y += (w1.y - w2.y) * 2.0 * dt;
+                        }
+                    }
+                });
+            }
+        });
+
+        // 追い風スキル
+        const windWeapon = this.weapons.find(w => w.activatedSkill === '追い風' && !w.isDead);
+        if (windWeapon) {
+            this.weapons.forEach(w => {
+                if (w === windWeapon) return;
+                const force = (w.owner === windWeapon.owner) ? 2 : -2;
+                w.x += force * dt * 60;
+            });
+        }
+
+        // 雷雲の落雷
+        this.weapons.forEach(w => {
+            if (w.activatedSkill === '落雷' && !w.isDead) {
+                w.thunderTimer = (w.thunderTimer || 0) - dt;
+                if (w.thunderTimer <= 0) {
+                    w.thunderTimer = 0.8; // 間隔
+                    // 真下に攻撃判定
+                    const target = w.owner === 'player' ? this.enemy : this.player;
+                    // X座標が近ければヒット
+                    if (Math.abs(w.x - target.x) < 50) {
+                         target.takeDamage(10);
+                         this.ui.showFloatingText(target.x, target.y - 40, "-10", "#ffff00");
+                         this.particles.push(new Lightning(w.x, w.y, target.x, target.y));
+                    }
+                    // 敵武器も巻き込む
+                    this.weapons.forEach(ew => {
+                         if (ew.owner !== w.owner && Math.abs(w.x - ew.x) < 30) {
+                             ew.currentDurability -= 10;
+                             this.particles.push(new Lightning(w.x, w.y, ew.x, ew.y));
+                         }
+                    });
+                }
+            }
+        });
+
+        for (let i = this.weapons.length - 1; i >= 0; i--) {
+            const w = this.weapons[i]; 
+            const ownerUnit = w.owner === 'player' ? this.player : this.enemy;
+            w.update(dt, ownerUnit);
+            
+            if (w.isDead && w.activatedSkill === "分裂") this.spawnCluster(w);
+            if (w.isDead && w.activatedSkill === "襲撃") this.spawnCluster(w); // 蜂の巣も同じロジックで簡易実装
+            
+            if (w.isDead && w.activatedSkill === "炎上") {
+                // 炎フィールド生成
+                this.fireFields.push(new FireField(w.x, this.groundY, '#f97316'));
+            }
+
+            if (w.isDead && w.activatedSkill === "粘着" && w.stickTarget) {
+                 w.stickTarget.isDead = true;
+                 this.spawnParticles(w.x, w.y, 'break', '#ef4444');
+            }
+
+            // ポータル
+            if (w.activatedSkill === "ポータル") {
+                if (w.x < 0) w.x = 896;
+                else if (w.x > 896) w.x = 0;
+                
+                // 画面上下ループ
+                if (w.y < -100) w.y = this.groundY;
+                else if (w.y > this.groundY + 50) w.y = -50;
+            }
+
+            if (w.progress >= 1.0 && !w.stickTarget && w.activatedSkill !== 'サテライト') { 
+                this.applyDamage(w); w.isDead = true; 
+            }
+            if (w.isDead) this.weapons.splice(i, 1);
+        }
+        this.checkCollisions();
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i]; p.update(dt); if (p.isDead) this.particles.splice(i, 1);
+        }
+        // FireField Update
+        for (let i = this.fireFields.length - 1; i >= 0; i--) {
+            const f = this.fireFields[i]; f.update(dt);
+            // 敵が触れたらダメージ
+            const target = this.enemy; // プレイヤーの炎なら敵に
+            // 簡易判定: 本来は所有者区別が必要だが今回はプレイヤーの油壺のみ想定
+            if (Math.abs(f.x - target.x) < 40) {
+                target.takeDamage(0.5); // スリップダメージ
+            }
+            if (f.isDead) this.fireFields.splice(i, 1);
+        }
+
+        this.ui.update(this.player, this.enemy);
+    }
+    
+    spawnCluster(parentW) {
+        for(let i=0; i<3; i++) {
+            const sub = new Weapon({
+                name: "子弾", icon: "💥", type: TrajectoryTypes.PARABOLA,
+                power: Math.floor(parentW.power * 0.3), durability: 1, cost: 0,
+                speed: 1.0, cooldown: 0, heightOffset: 50 + Math.random() * 50, size: 15, color: parentW.color,
+                owner: parentW.owner, scale: 0.6,
+                startX: parentW.x, startY: parentW.y,
+                targetX: parentW.targetX + (Math.random() - 0.5) * 150, targetY: parentW.targetY
+            });
+            this.weapons.push(sub);
+        }
+    }
+
+    updateEnemyAI(dt) {
+        if (this.enemy.actionTimer <= 0) {
+            const keys = Object.keys(WeaponData); const choice = keys[Math.floor(Math.random() * keys.length)]; const data = WeaponData[choice];
+            if (this.enemy.bp >= data.cost) {
+                this.enemy.bp -= data.cost;
+                let targetY = this.player.y - 20;
+                if (this.enemy.blindTimer > 0) targetY += (Math.random() - 0.5) * 400;
+                const weapon = WeaponFactory.create(choice, 'enemy', {x: this.enemy.x - 30, y: this.enemy.y - 20}, {x: this.player.x, y: targetY});
+                this.weapons.push(weapon);
+                const baseInterval = 1.5 + Math.random() * 1.5; this.enemy.actionTimer = baseInterval * this.enemy.actionSpeedMult;
+            } else { this.enemy.actionTimer = 0.5; }
+        }
+    }
+
+    checkCollisions() {
+        for (let i = 0; i < this.weapons.length; i++) {
+            for (let j = i + 1; j < this.weapons.length; j++) {
+                const w1 = this.weapons[i]; const w2 = this.weapons[j];
+                if (w1.owner === w2.owner) continue;
+                if (w1.type === TrajectoryTypes.SUBMARINE || w2.type === TrajectoryTypes.SUBMARINE) continue;
+                if (w1.stickTarget || w2.stickTarget) continue; 
+
+                const dx = w1.x - w2.x; const dy = w1.y - w2.y; const dist = Math.sqrt(dx*dx + dy*dy);
+                const s1 = (w1.size || 20) * (w1.scale || 1.0); const s2 = (w2.size || 20) * (w2.scale || 1.0);
+                if (dist < (s1 + s2) / 1.2) this.resolveClash(w1, w2);
+            }
+        }
+    }
+
+    resolveClash(w1, w2) {
+        if (w1.activatedSkill === "粘着" && !w2.stickTarget) { w1.stickTarget = w2; w1.stickTimer = 3.0; this.ui.showFloatingText(w1.x, w1.y, "STUCK!", "#e2e8f0"); return; }
+        if (w2.activatedSkill === "粘着" && !w1.stickTarget) { w2.stickTarget = w1; w2.stickTimer = 3.0; this.ui.showFloatingText(w2.x, w2.y, "STUCK!", "#e2e8f0"); return; }
+
+        // 貫通スキル (相手を破壊しても自分は減らない)
+        let damageTo1 = w2.power + (w2.currentDurability * 0.5); 
+        let damageTo2 = w1.power + (w1.currentDurability * 0.5);
+        
+        const w2WillDie = (w2.currentDurability - damageTo2) <= 0;
+        
+        // 貫通判定
+        if (w1.activatedSkill === "掘削" || w1.activatedSkill === "貫通") {
+            if (w2WillDie) damageTo1 = 0; // 相手を倒せるならノーダメ
+        }
+
+        // ネクロマンシー
+        if (w2WillDie && w1.activatedSkill === "死霊蘇生") {
+             w2.currentDurability = w2.durability * 0.5; w2.owner = w1.owner; w2.color = w1.color; 
+             w2.startX = w2.x; w2.targetX = (w1.owner === 'player') ? this.enemy.x : this.player.x; w2.progress = 0; 
+             this.ui.showFloatingText(w2.x, w2.y - 20, "REVIVE!", "#a855f7");
+             w1.currentDurability -= damageTo1;
+             return;
+        }
+
+        // マトリョーシカ (w1側)
+        const w1WillDie = (w1.currentDurability - damageTo1) <= 0;
+        if (w1WillDie && w1.activatedSkill === "多重殻") {
+            w1.layer = (w1.layer || 3);
+            if (w1.layer > 1) {
+                w1.layer--; w1.currentDurability = w1.durability * 0.5; w1.scale *= 0.8;
+                this.spawnParticles(w1.x, w1.y, 'break', w1.color);
+                this.ui.showFloatingText(w1.x, w1.y, "POP!", "#fcd34d");
+                w2.currentDurability -= damageTo2;
+                return; 
+            }
+        }
+        if (w2WillDie && w2.activatedSkill === "多重殻") {
+            w2.layer = (w2.layer || 3);
+            if (w2.layer > 1) {
+                w2.layer--; w2.currentDurability = w2.durability * 0.5; w2.scale *= 0.8;
+                this.spawnParticles(w2.x, w2.y, 'break', w2.color);
+                this.ui.showFloatingText(w2.x, w2.y, "POP!", "#fcd34d");
+                w1.currentDurability -= damageTo1;
+                return; 
+            }
+        }
+        
+        // 凍結（鮮度）
+        if (w1.activatedSkill === "鮮度") { w2.speedMultiplier = 5.0; this.ui.showFloatingText(w2.x, w2.y, "FREEZE", "#60a5fa"); }
+        if (w2.activatedSkill === "鮮度") { w1.speedMultiplier = 5.0; this.ui.showFloatingText(w1.x, w1.y, "FREEZE", "#60a5fa"); }
+
+        // 連鎖雷
+        if (w1.activatedSkill === "連鎖雷") {
+            const targets = [this.enemy, ...this.weapons.filter(w => w.owner === 'enemy')];
+            targets.forEach(t => {
+                if (t === w2) return;
+                const dist = Math.sqrt((w2.x - t.x)**2 + (w2.y - t.y)**2);
+                if (dist < 150) {
+                    const dmg = 10;
+                    if (t.takeDamage) t.takeDamage(dmg); else t.currentDurability -= dmg;
+                    this.particles.push(new Lightning(w2.x, w2.y, t.x, t.y));
+                    this.ui.showFloatingText(t.x, t.y, "ZAP!", "#ffff00");
+                }
+            });
+        }
+        if (w2.activatedSkill === "連鎖雷") {
+            const targets = [this.player, ...this.weapons.filter(w => w.owner === 'player')];
+            targets.forEach(t => {
+                if (t === w1) return;
+                const dist = Math.sqrt((w1.x - t.x)**2 + (w1.y - t.y)**2);
+                if (dist < 150) {
+                    const dmg = 10;
+                    if (t.takeDamage) t.takeDamage(dmg); else t.currentDurability -= dmg;
+                    this.particles.push(new Lightning(w1.x, w1.y, t.x, t.y));
+                    this.ui.showFloatingText(t.x, t.y, "ZAP!", "#ffff00");
+                }
+            });
+        }
+
+        w1.currentDurability -= damageTo1; 
+        w2.currentDurability -= damageTo2;
+        
+        const midX = (w1.x + w2.x) / 2; const midY = (w1.y + w2.y) / 2;
+        this.spawnParticles(midX, midY, 'clash', '#fff'); this.engine.triggerHitStop(0.05);
+        
+        if (w1.currentDurability <= 0) { w1.isDead = true; this.spawnParticles(w1.x, w1.y, 'break', w1.color); this.ui.showFloatingText(midX, midY - 20, "BREAK!", "#ff0000"); }
+        else { this.ui.showFloatingText(w1.x, w1.y - 20, `-${Math.floor(damageTo1)}`, "#fff"); }
+        
+        if (w2.currentDurability <= 0) { w2.isDead = true; this.spawnParticles(w2.x, w2.y, 'break', w2.color); this.ui.showFloatingText(midX, midY + 20, "BREAK!", "#ff0000"); }
+        else { this.ui.showFloatingText(w2.x, w2.y - 20, `-${Math.floor(damageTo2)}`, "#fff"); }
+    }
+
+    applyDamage(weapon) {
+        const isPlayerHit = weapon.owner === 'enemy'; const target = isPlayerHit ? this.player : this.enemy;
+        
+        if (weapon.activatedSkill === "運試し") {
+            const rand = Math.random();
+            if (rand < 0.1) { weapon.power *= 3; if(!isPlayerHit) this.player.heal(20); this.ui.showFloatingText(weapon.x, weapon.y - 50, "777!", "#fbbf24", true); }
+            else if (rand < 0.5) { weapon.power = Math.floor(weapon.power * 1.5); this.ui.showFloatingText(weapon.x, weapon.y - 50, "LUCKY!", "#34d399", true); }
+            else if (rand > 0.9) { weapon.power = 1; this.ui.showFloatingText(weapon.x, weapon.y - 50, "MISS...", "#94a3b8", true); }
+        }
+
+        target.takeDamage(weapon.power);
+        this.spawnParticles(weapon.x, weapon.y, 'hit', weapon.color); this.ui.showFloatingText(weapon.x, weapon.y - 40, `-${weapon.power}`, isPlayerHit ? "#ff0000" : "#ffff00", true); this.ui.triggerFlash();
+        
+        if (weapon.activatedSkill === "目潰し") { target.blindTimer = 5.0; this.ui.showFloatingText(target.x, target.y - 80, "BLIND!", "#f87171", true); }
+        if (weapon.activatedSkill === "通知") { target.bp = Math.max(0, target.bp - 2); this.ui.showFloatingText(target.x, target.y - 80, "BP-2", "#3b82f6", true); }
+
+        if (Math.random() < 0.3) {
+            if (isPlayerHit) this.gemini.getBossTaunt(this.enemy.name, "攻撃命中。嘲笑せよ").then(t => t && this.ui.showBubble(t));
+            else this.gemini.getBossTaunt(this.enemy.name, "被弾した。痛がれ").then(t => t && this.ui.showBubble(t));
+        }
+        if (this.player.hp <= 0 || this.enemy.hp <= 0) this.finishGame(this.player.hp > 0);
+    }
+
+    finishGame(isWin) {
+        this.engine.stop(); this.isBattleStarted = false;
+        const resultScreen = document.getElementById('result-screen'); const resultTitle = document.getElementById('result-title'); const resultComment = document.getElementById('result-comment');
+        resultScreen.classList.remove('hidden');
+        if (isWin) { resultTitle.innerText = "VICTORY!"; resultTitle.className = "text-5xl font-bold text-yellow-400 mb-4 font-['Reggae_One']"; resultComment.innerText = "見事な勝利だ！"; } 
+        else { resultTitle.innerText = "DEFEAT..."; resultTitle.className = "text-5xl font-bold text-blue-500 mb-4 font-['Reggae_One']"; resultComment.innerText = ""; }
+    }
+
+    spawnParticles(x, y, type, color) {
+        const count = type === 'break' ? 10 : 5; for(let i=0; i<count; i++) this.particles.push(new Particle(x, y, color));
+    }
+
+    draw() {
+        this.drawCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.drawCtx.fillStyle = "#334155"; this.drawCtx.fillRect(0, this.groundY, this.canvas.width, this.canvas.height - this.groundY);
+        this.drawCtx.fillStyle = "#475569"; this.drawCtx.fillRect(0, this.groundY, this.canvas.width, 10);
+        this.drawUnit(this.drawCtx, this.player, 'blue'); this.drawUnit(this.drawCtx, this.enemy, 'red');
+        
+        this.fireFields.forEach(f => f.draw(this.drawCtx)); // 炎描画
+        
+        this.weapons.forEach(w => w.draw(this.drawCtx, this.groundY)); 
+        this.particles.forEach(p => p.draw(this.drawCtx));
+    }
+
+    drawUnit(ctx, unit, color) {
+        ctx.save(); ctx.translate(unit.x, unit.y); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(0, 10, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+        if (unit.blindTimer > 0) { ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillText("🕶️", 0, -50); }
+        ctx.strokeStyle = color === 'blue' ? '#3b82f6' : '#ef4444'; ctx.lineWidth = 4; ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(0, -30); ctx.moveTo(0, -20); ctx.lineTo(-10, -10); ctx.moveTo(0, -20); ctx.lineTo(10, -10); ctx.moveTo(0, 0); ctx.lineTo(-10, 20); ctx.moveTo(0, 0); ctx.lineTo(10, 20); ctx.stroke();
+        ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(0, -35, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+}
+
+// ==========================================================================================
+// 7. Main Entry Point
+// ==========================================================================================
+
+const eventEmitter = new EventEmitter(); const uiManager = new UIManager(eventEmitter); const geminiService = new GeminiService(apiKey); const gameEngine = new GameEngine(); const weaponSelectScene = new WeaponSelectScene(uiManager);
+const context = { engine: gameEngine, gemini: geminiService, ui: uiManager, events: eventEmitter }; const battleScene = new BattleScene(context);
+let selectedDiff = 'normal';
+
+document.getElementById('btn-start-game').onclick = () => { document.getElementById('title-screen').classList.add('hidden'); weaponSelectScene.show(); };
+document.getElementById('btn-show-settings').onclick = () => { document.getElementById('title-screen').classList.add('hidden'); document.getElementById('settings-screen').classList.remove('hidden'); };
+document.getElementById('btn-back-title').onclick = () => { document.getElementById('settings-screen').classList.add('hidden'); document.getElementById('title-screen').classList.remove('hidden'); };
+eventEmitter.on('scene:battle_start', (deck) => { battleScene.init(selectedDiff, deck); gameEngine.start((dt) => battleScene.update(dt), () => battleScene.draw()); });
+document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.onclick = (e) => {
+        selectedDiff = e.target.dataset.diff;
+        document.querySelectorAll('.diff-btn').forEach(b => { b.classList.add('opacity-50'); b.classList.remove('border-white', 'shadow-lg', 'scale-105'); });
+        e.target.classList.remove('opacity-50'); e.target.classList.add('border-white', 'shadow-lg', 'scale-105');
+        document.getElementById('diff-desc').innerText = DifficultySettings[selectedDiff].description;
+    };
+});
+document.getElementById('btn-retry').onclick = () => {
+    document.getElementById('result-screen').classList.add('hidden'); document.getElementById('damage-container').innerHTML = ''; document.getElementById('skill-display-container').innerHTML = ''; document.getElementById('enemy-bubble').classList.remove('show');
+    weaponSelectScene.show();
+};
+document.getElementById('btn-to-title').onclick = () => {
+    document.getElementById('result-screen').classList.add('hidden'); document.getElementById('title-screen').classList.remove('hidden'); document.getElementById('damage-container').innerHTML = ''; document.getElementById('skill-display-container').innerHTML = ''; document.getElementById('enemy-bubble').classList.remove('show');
+};
+battleScene.resize();
+
+</script>
+</body>
+</html>
