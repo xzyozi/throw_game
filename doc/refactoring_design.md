@@ -1,263 +1,298 @@
-# 武器投げRPG リファクタリング設計書
-
+# 武器投げRPG リファクタリング設計書 
 ## 1. 設計方針 (Architecture Overview)
 
-現状の「God Class（神クラス）」状態になっている `Game` クラスを解体し、以下の4つのレイヤーに責務を分散させます。
+現状の「God Class（神クラス）」状態を解体し、以下の4つのレイヤーに責務を分散させます。
 
-*   **Core (基盤)**: ゲームループ、シーン遷移、設定管理。
-*   **Entities (実体)**: プレイヤー、敵、武器などの状態管理。
-*   **Systems (ロジック)**: 戦闘計算、移動計算、AI通信などの純粋なロジック。
-*   **UI (表示)**: DOM操作、描画（Canvas）、入力イベント。
+*   **Core (基盤)**: ゲームループ、シーン遷移、設定管理
+*   **Entities (実体)**: キャラクター、敵、武器などの状態管理
+*   **Systems (ロジック)**: 戦闘計算、軌道計算、AI戦略などの純粋なロジック
+*   **UI (表示)**: DOM操作、描画（Canvas）、入力イベント
 
 適用するデザインパターン:
 
-*   **Strategy Pattern**: 武器ごとの軌道計算（直進、放物線）を切り替え可能にする。
-*   **Factory Pattern**: データ定義から武器インスタンスを生成する。
-*   **State Pattern**: タイトル、戦闘、結果などのシーン管理。
-*   **Dependency Injection (DI)**: 外部サービス（Gemini API）や設定を注入可能にする。
+*   **Strategy Pattern**: 軌道計算、AI戦略
+*   **Factory Pattern**: 武器生成、キャラクター生成
+*   **State Pattern**: シーン管理
+*   **Dependency Injection**: 依存関係の注入
+*   **Object Pool Pattern**: パーティクル・ライトニングの再利用
+
+---
 
 ## 2. ディレクトリ・ファイル構成案
 
-```markdown
+```
 src/
 ├── core/
-│   ├── GameEngine.js       # メインループ (requestAnimationFrame)
-│   ├── SceneManager.js     # シーン管理 (Title, Battle, Result)
-│   └── EventEmitter.js     # イベントバス (Observer Pattern)
+│   ├── GameEngine.js
+│   ├── SceneManager.js
+│   └── EventEmitter.js
 ├── entities/
-│   ├── GameObject.js       # 基底クラス (x, y, update, draw)
-│   ├── Unit.js             # キャラクター基底 (HP, BP)
-│   ├── Player.js           # プレイヤー固有処理
-│   ├── Enemy.js            # 敵AI処理
-│   └── Weapon.js           # 武器オブジェクト
+│   ├── GameObject.js
+│   ├── Unit.js
+│   ├── Character.js        # 新規: キャラクター基底
+│   ├── Player.js
+│   ├── Enemy.js
+│   └── Weapon.js
 ├── systems/
-│   ├── BattleSystem.js     # 衝突判定、ダメージ計算
-│   ├── TrajectorySystem.js # 軌道計算ロジック (Strategy)
-│   ├── WeaponFactory.js    # 武器生成ファクトリ
-│   └── GeminiService.js    # 生成AI通信アダプター
+│   ├── TrajectorySystem.js
+│   ├── SkillApplier.js     # 新規: スキル効果一元管理
+│   ├── SkillTrigger.js     # 新規: スキル発動判定
+│   ├── AIStrategy.js       # 新規: 敵AI戦略
+│   ├── CollisionDetector.js # 新規: 衝突判定精度向上
+│   ├── WeaponFactory.js
+│   └── BattleSystem.js
+├── pooling/
+│   ├── ObjectPool.js       # 新規
+│   ├── ParticlePool.js     # 新規
+│   └── LightningPool.js    # 新規
 ├── ui/
-│   ├── UIManager.js        # DOM要素(HPバー等)の更新
-│   ├── CanvasRenderer.js   # Canvasへの描画担当
-│   └── InputHandler.js     # ユーザー入力の監視
+│   ├── UIManager.js
+│   ├── CanvasRenderer.js
+│   └── InputHandler.js
 ├── data/
-│   ├── Constants.js        # 定数 (FPS, ScreenSize)
-│   └── WeaponData.js       # 武器のマスタデータ
-└── main.js                 # エントリーポイント (DI設定と起動)
+│   ├── Constants.js
+│   ├── WeaponData.js
+│   ├── SkillData.js        # 新規
+│   └── DifficultyConfig.js
+└── main.js
 ```
 
-## 3. 実装イメージ (Pseudo Code)
+---
 
-### 3.1 Systems Layer (ロジックの中核)
+## 3. 主要な改訂内容
 
-#### 軌道計算 (Strategy Pattern)
-
-武器の動きをクラスとして独立させます。新しい軌道（例：波型、追尾）を追加する際も、既存コードを修正せずクラスを追加するだけで済みます。
+### 3.1 TrajectoryStrategy (軌道計算の抽象化)
 
 ```javascript
-/**
- * 軌道計算のインターフェース
- */
-class ITrajectoryStrategy {
-    calculate(t, start, end, heightOffset) { throw new Error("Not implemented"); }
+// 基底クラス
+class TrajectoryStrategy {
+    calculate(t, sx, sy, tx, ty, heightOffset) {
+        throw new Error("Must be implemented by subclass");
+    }
 }
 
-class StraightTrajectory extends ITrajectoryStrategy {
-    calculate(t, start, end, heightOffset) {
-        // 線形補間 (Lerp)
-        return {
-            x: start.x + (end.x - start.x) * t,
-            y: start.y + (end.y - start.y) * t
+// 具体的な実装クラス
+class StraightTrajectory extends TrajectoryStrategy { /* ... */ }
+class ParabolaTrajectory extends TrajectoryStrategy { /* ... */ }
+class SubmarineTrajectory extends TrajectoryStrategy {
+    // 中点で最も深く潜航する実装
+}
+```
+
+**改訂点**: 
+- インターフェース化により、新しい軌道タイプの追加が容易
+- Submarine は単なる固定値ではなく、実際の潜航ロジックを実装
+
+---
+
+### 3.2 SkillApplier (スキル効果の一元管理 - 新規)
+
+```javascript
+class SkillApplier {
+    static apply(skillName, stats) {
+        const skillEffects = {
+            "急所突き": (s) => ({ ...s, power: Math.floor(s.power * 2.0) }),
+            "貫通": (s) => ({ ...s, durability: Math.floor(s.durability * 1.5) }),
+            // ... その他スキル
         };
-    }
-}
-
-class ParabolaTrajectory extends ITrajectoryStrategy {
-    calculate(t, start, end, heightOffset) {
-        const base = super.calculate(t, start, end); // 直線座標を取得
-        const arc = 4 * heightOffset * t * (1 - t);  // 放物線の高さ
-        return { x: base.x, y: base.y - arc };
+        return skillEffects[skillName]?.(stats) ?? stats;
     }
 }
 ```
 
-#### AIサービス (Dependency Injection)
+**改訂点**:
+- WeaponFactory の switch 文をこのクラスに集約
+- スキル追加時は SkillApplier を修正するのみ
+- 責務が明確で拡張性向上
 
-APIキーやエンドポイントを隠蔽し、テスト時にはモック（偽物）に差し替えられるようにします。
+---
+
+### 3.3 SkillTrigger (スキル発動判定の統一 - 新規)
 
 ```javascript
-class GeminiService {
-    constructor(apiKey, config) {
-        this.apiKey = apiKey;
-        this.baseUrl = config.baseUrl;
-    }
-
-    async getBossName() {
-        const prompt = "ファンタジーRPGのボス名を生成...";
-        return this._fetch(prompt);
-    }
-
-    async getTacticalAdvice(playerHp, enemyHp) {
-        const prompt = `状況: P_HP:${playerHp}, E_HP:${enemyHp}...`;
-        return this._fetch(prompt);
-    }
-
-    async _fetch(prompt) {
-        // 実際のfetch処理。エラーハンドリングもここで行う
+class SkillTrigger {
+    static shouldTrigger(skillData, isForced = false, randomFn = Math.random) {
+        if (isForced) return true;
+        if (!skillData) return false;
+        if (skillData.triggerRate === 1.0) return true;
+        return randomFn() < skillData.triggerRate;
     }
 }
 ```
 
-### 3.2 Entities Layer (ゲームオブジェクト)
+**改訂点**:
+- 重複していた判定ロジックを統一
+- randomFn をパラメータにしてテスト容易性向上
+- スキルデータ取得機能も組み込み
 
-#### 武器クラス (Factory Pattern)
+---
 
-データ（`WEAPON_DATA`）と振る舞い（`TrajectoryStrategy`）を組み合わせてインスタンス化します。
+### 3.4 AIStrategy (敵AI戦略 - 新規)
 
 ```javascript
-class Weapon extends GameObject {
-    constructor(params) {
-        super(params.x, params.y);
-        this.stats = params.stats; // 攻撃力, 耐久力など
-        this.strategy = params.strategy; // 軌道ストラテジーを保持
-        this.owner = params.owner;
-        this.progress = 0;
-    }
-
-    update(dt) {
-        this.progress += dt / this.stats.speed;
-        // 動きの計算をStrategyに委譲する
-        const pos = this.strategy.calculate(
-            this.progress, 
-            this.startPos, 
-            this.targetPos, 
-            this.stats.heightOffset
-        );
-        this.x = pos.x;
-        this.y = pos.y;
-    }
-}
-
-// 武器生成ファクトリ
-class WeaponFactory {
-    static create(key, owner, startPos, targetPos) {
-        const data = WEAPON_DATA[key];
+class AIStrategy {
+    static selectWeapon(enemy, player, difficulty, randomFn = Math.random) {
+        // HP が低い場合は回復スキル優先
+        if (enemy.hp < enemy.maxHp * 0.3) { /* ... */ }
         
-        // データに基づいて適切な軌道クラスを選択
-        let strategy;
-        switch (data.type) {
-            case 'Straight': strategy = new StraightTrajectory(); break;
-            case 'Parabola': strategy = new ParabolaTrajectory(); break;
-            // ...
+        // 難度に応じた武器選択戦略
+        switch (difficulty) {
+            case 'easy': return lowPowerWeapon();
+            case 'normal': return mediumPowerWeapon();
+            case 'hard': return highPowerWeapon();
         }
-
-        return new Weapon({
-            stats: data,
-            strategy: strategy,
-            owner: owner,
-            x: startPos.x,
-            y: startPos.y
-        });
     }
 }
 ```
 
-### 3.3 Core Layer (全体進行)
+**改訂点**:
+- ランダムな武器選択から戦略的な選択へ
+- HP・BP・難度を考慮した判断
+- 難度設定の有効活用
 
-#### シーン管理 (State Pattern)
+---
 
-`switch(this.state)` で分岐するのではなく、状態そのものをオブジェクトとして扱います。
+### 3.5 Character クラス (キャラクター基底 - 新規)
 
 ```javascript
-class SceneManager {
-    constructor(engine) {
-        this.engine = engine;
-        this.currentScene = null;
+class Character extends Unit {
+    constructor(x, y, hp, weaponDeck = []) {
+        super(x, y, hp);
+        this.weaponDeck = weaponDeck;
+        this.maxDeckSize = 5;
     }
 
-    changeScene(scene) {
-        if (this.currentScene) this.currentScene.exit();
-        this.currentScene = scene;
-        this.currentScene.enter();
-    }
-
-    update(dt) {
-        if (this.currentScene) this.currentScene.update(dt);
-    }
-
-    draw(ctx) {
-        if (this.currentScene) this.currentScene.draw(ctx);
-    }
-}
-
-// 各シーンは update/draw を持つ
-class BattleScene {
-    constructor(diContainer) {
-        this.battleSystem = diContainer.battleSystem;
-        this.uiManager = diContainer.uiManager;
-    }
-    update(dt) {
-        this.battleSystem.update(dt);
-        this.uiManager.update();
-    }
+    addWeapon(weaponKey) { /* デッキに追加 */ }
+    removeWeapon(weaponKey) { /* デッキから削除 */ }
+    isDeckFull() { return this.weaponDeck.length === this.maxDeckSize; }
 }
 ```
 
-### 3.4 UI Layer (表示と入力)
+**改訂点**:
+- プレイヤー・敵の共通基底として機能
+- 武器リスト管理を一元化
+- デッキの状態を追跡可能に
 
-#### UIマネージャー (View)
+---
 
-ゲームロジックからDOM操作を分離します。`Game`クラスの中に `document.getElementById` が散乱するのを防ぎます。
+### 3.6 CollisionDetector (衝突判定の精度向上 - 新規)
 
 ```javascript
-class UIManager {
+class CollisionDetector {
     constructor() {
-        this.elements = {
-            hpBar: document.getElementById('hp-bar'),
-            message: document.getElementById('message-area'),
-            // ...
-        };
+        this.collided = new Set(); // フレーム内の重複判定防止
+        this.HIT_RADIUS = 15; // ピクセルベースの判定半径
     }
 
-    updateHP(playerHp, maxHp) {
-        const pct = (playerHp / maxHp) * 100;
-        this.elements.hpBar.style.width = `${pct}%`;
+    checkCollision(w1, w2) {
+        const dist = Math.sqrt((w1.x - w2.x)**2 + (w1.y - w2.y)**2);
+        const radius1 = this.HIT_RADIUS * w1.scale;
+        const radius2 = this.HIT_RADIUS * w2.scale;
+        return dist < radius1 + radius2;
     }
 
-    showDialog(text, speaker) {
-        // 吹き出し表示ロジック
+    detectAllCollisions(weapons) {
+        // 全武器の衝突判定を実行
     }
 }
 ```
 
-## 4. Main Entry Point (統合)
+**改訂点**:
+- 魔法数字 `/ 1.2` を削除
+- ピクセルベースの統一判定
+- フレーム内の重複判定を防止
 
-全ての部品を組み立ててゲームを開始します。ここで依存関係の注入（DI）を行います。
+---
+
+### 3.7 ObjectPool パターン (メモリ最適化 - 新規)
 
 ```javascript
-// main.js
+class ObjectPool {
+    constructor(ObjectClass, initialSize = 100) {
+        this.available = [];
+        this.active = [];
+        // プリアロケーション
+        for (let i = 0; i < initialSize; i++) {
+            this.available.push(new ObjectClass());
+        }
+    }
 
-// 1. 設定とサービスの初期化
-const geminiService = new GeminiService(API_KEY);
-const uiManager = new UIManager();
-const inputHandler = new InputHandler();
+    acquire(params) {
+        // 再利用可能なオブジェクトを確保
+    }
 
-// 2. システムの初期化
-const battleSystem = new BattleSystem();
+    release(obj) {
+        // オブジェクトをプールに戻す
+    }
+}
 
-// 3. 依存関係のコンテナ化 (簡易DI)
-const context = {
-    gemini: geminiService,
-    ui: uiManager,
-    battle: battleSystem,
-    input: inputHandler
-};
-
-// 4. エンジンの起動
-const engine = new GameEngine();
-const sceneManager = new SceneManager(engine);
-
-// 最初のシーンへ
-sceneManager.changeScene(new TitleScene(context));
-
-engine.start();
+class ParticlePool extends ObjectPool {
+    spawn(x, y, color) { this.acquire({ x, y, color }); }
+}
 ```
+
+**改訂点**:
+- パーティクル・ライトニングの無制限生成を防止
+- メモリ使用量を制御
+- GC 圧力を削減
+
+---
+
+## 4. 実装フロー図
+
+```
+┌─────────────────────────────────────┐
+│      PlayerThrow (UI Event)         │
+└──────────────────┬──────────────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  SkillTrigger       │
+        │ (発動判定)          │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  SkillApplier       │
+        │ (効果適用)          │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  WeaponFactory      │
+        │ (インスタンス生成)  │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  CollisionDetector  │
+        │ (衝突判定)          │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  BattleSystem       │
+        │ (ダメージ計算)      │
+        └──────────┬──────────┘
+                   │
+        ┌──────────▼──────────┐
+        │  ParticlePool       │
+        │ (エフェクト表示)    │
+        └─────────────────────┘
+```
+
+---
+
+## 5. テスト容易性の向上
+
+### 5.1 乱数注入
+
+```javascript
+// テスト時
+const mockRandom = () => 0.5;
+AIStrategy.selectWeapon(enemy, player, 'hard', mockRandom);
+```
+
+### 5.2 モック戦略
+
+```javascript
+// スキル発動テスト
+SkillTrigger.shouldTrigger(skillData, false, () => 0.1);
+```
+
+---
