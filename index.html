@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Weapon Throwing RPG (Refactored)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700&family=Reggae+One&display=swap');
+        
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #0f172a; /* slate-900 */
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        
+        #game-container {
+            background-color: #f0f9ff;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        #game-canvas {
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 80%, #8D6E63 80%, #795548 100%);
+        }
+
+        /* UI Styles */
+        .btn-primary { background: linear-gradient(to bottom, #fcd34d, #f59e0b); border-bottom: 4px solid #b45309; color: #451a03; font-weight: bold; transition: all 0.1s; }
+        .btn-primary:active { transform: translateY(2px); border-bottom: 0px solid transparent; }
+        .btn-secondary { background: #e2e8f0; border-bottom: 4px solid #94a3b8; color: #334155; font-weight: bold; transition: all 0.1s; }
+        .btn-secondary:active { transform: translateY(2px); border-bottom: 0px solid transparent; }
+
+        .weapon-btn { position: relative; transition: all 0.1s; border-bottom: 4px solid #b91c1c; /* red-700 */ }
+        .weapon-btn:active { transform: translateY(2px); border-bottom: 0px solid transparent; }
+        .weapon-btn:disabled { filter: grayscale(100%); cursor: not-allowed; opacity: 0.6; transform: none; border-bottom: 4px solid #555; }
+
+        .weapon-card { cursor: pointer; transition: all 0.1s; border: 2px solid transparent; background-color: #334155; }
+        .weapon-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .weapon-card:active { transform: scale(0.98); }
+        .weapon-card.equipped { opacity: 0.4; filter: grayscale(80%); cursor: default; transform: none; box-shadow: none; border: 2px solid #64748b; }
+        
+        .equipped-card { cursor: pointer; transition: all 0.1s; border: 2px solid #f59e0b; background-color: #1e293b; }
+        .equipped-card:hover { background-color: #334155; }
+
+        .cooldown-overlay { position: absolute; bottom: 0; left: 0; width: 100%; background-color: rgba(0, 0, 0, 0.6); transition: height 0.1s linear; }
+
+        .speech-bubble {
+            position: absolute; background: #fff; border: 2px solid #000; border-radius: 10px; padding: 8px 12px;
+            font-size: 14px; font-weight: bold; color: #333; max-width: 200px;
+            box-shadow: 2px 2px 0 rgba(0,0,0,0.2); opacity: 0; transform: scale(0.8); pointer-events: none; z-index: 5;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .speech-bubble.show { opacity: 1; transform: scale(1); }
+        
+        #enemy-bubble { top: 20%; right: 15%; }
+        #enemy-bubble::after { content: ''; position: absolute; bottom: -8px; right: 20px; border-width: 8px 8px 0; border-style: solid; border-color: #000 transparent transparent transparent; }
+
+        .damage-text { position: absolute; font-weight: bold; pointer-events: none; text-shadow: 1px 1px 0 #fff; animation: floatUp 0.8s ease-out forwards; white-space: nowrap; }
+        
+        .skill-text {
+            position: absolute; font-family: 'Reggae One', cursive; font-size: 32px; color: #fbbf24;
+            text-shadow: 2px 2px 0 #000, 0 0 10px #b45309; pointer-events: none; animation: popSkill 1.2s ease-out forwards;
+            white-space: nowrap; z-index: 20; text-align: center;
+        }
+        
+        .special-move-text {
+            position: absolute; font-family: 'Reggae One', cursive; font-size: 32px; color: #fbbf24;
+            text-shadow: 2px 2px 0 #b91c1c, -1px -1px 0 #000; pointer-events: none; z-index: 10;
+            animation: skillCutIn 1.5s ease-out forwards; white-space: nowrap;
+        }
+        
+        #hit-flash { position: absolute; inset: 0; background: white; opacity: 0; pointer-events: none; transition: opacity 0.05s; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+
+        @keyframes floatUp { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-30px) scale(1.2); opacity: 0; } }
+        @keyframes popSkill { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 20% { transform: translate(-50%, -50%) scale(1.3); opacity: 1; } 40% { transform: translate(-50%, -50%) scale(1.0); opacity: 1; } 80% { transform: translate(-50%, -50%) scale(1.0); opacity: 1; } 100% { transform: translate(-50%, -100%) scale(1.2); opacity: 0; } }
+        @keyframes skillCutIn { 0% { transform: translate(-50%, -50%) scale(0.5) rotate(-5deg); opacity: 0; left: 50%; top: 40%; } 20% { transform: translate(-50%, -50%) scale(1.2) rotate(0deg); opacity: 1; left: 50%; top: 40%; } 80% { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); opacity: 1; left: 50%; top: 35%; } 100% { transform: translate(-50%, -50%) scale(1.5) rotate(5deg); opacity: 0; left: 50%; top: 30%; } }
+        @keyframes floating { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
+        .title-logo { animation: floating 3s ease-in-out infinite; }
+    </style>
+</head>
+<body class="h-screen w-full flex flex-col items-center justify-center p-2 select-none">
+
+    <div id="game-container" class="relative w-full max-w-4xl h-full max-h-[600px] flex flex-col rounded-lg overflow-hidden">
+        
+        <!-- Title Screen -->
+        <div id="title-screen" class="absolute inset-0 bg-slate-800 z-50 flex flex-col items-center justify-center text-white">
+            <h1 class="text-5xl md:text-6xl font-bold mb-8 text-yellow-400 font-['Reggae_One'] title-logo text-center px-4 leading-tight" style="text-shadow: 4px 4px 0 #b45309;">WEAPON<br>THROW RPG</h1>
+            <div class="flex flex-col gap-4 w-64">
+                <button id="btn-start-game" class="btn-primary py-4 rounded text-xl shadow-lg">ゲーム開始</button>
+                <button id="btn-show-settings" class="btn-secondary py-3 rounded text-lg shadow-lg">設定 (CPU強度)</button>
+            </div>
+            <div class="mt-8 text-slate-400 text-sm">33 Unique Weapons</div>
+        </div>
+
+        <!-- Settings Screen -->
+        <div id="settings-screen" class="hidden absolute inset-0 bg-slate-800/95 z-50 flex flex-col items-center justify-center text-white p-4">
+            <h2 class="text-3xl font-bold mb-8 text-white border-b-4 border-yellow-500 pb-2">設定</h2>
+            <div class="w-full max-w-md bg-slate-700 p-6 rounded-lg shadow-xl mb-8">
+                <p class="mb-4 text-center font-bold text-lg text-blue-300">CPUの強さ</p>
+                <div class="flex justify-between gap-2">
+                    <button id="btn-diff-easy" class="diff-btn flex-1 py-3 rounded font-bold border-2 border-transparent transition-all bg-green-600 text-white opacity-50 hover:opacity-100" data-diff="easy">EASY</button>
+                    <button id="btn-diff-normal" class="diff-btn flex-1 py-3 rounded font-bold border-2 border-transparent transition-all bg-blue-600 text-white border-white shadow-lg transform scale-105" data-diff="normal">NORMAL</button>
+                    <button id="btn-diff-hard" class="diff-btn flex-1 py-3 rounded font-bold border-2 border-transparent transition-all bg-red-600 text-white opacity-50 hover:opacity-100" data-diff="hard">HARD</button>
+                </div>
+                <div id="diff-desc" class="mt-4 text-center text-sm text-slate-300 h-12 flex items-center justify-center">HP:300。標準的な強さです。</div>
+            </div>
+            <button id="btn-back-title" class="btn-secondary py-3 px-8 rounded text-lg w-64">戻る</button>
+        </div>
+
+        <!-- Weapon Select Screen -->
+        <div id="weapon-select-screen" class="hidden absolute inset-0 bg-slate-800 z-40 flex flex-col items-center text-white p-2 sm:p-4">
+            <div class="w-full flex justify-between items-end border-b-2 border-yellow-500 pb-2 mb-2">
+                <h2 class="text-2xl font-bold text-white">デッキ編成</h2>
+                <div class="text-sm text-slate-300">5つ選択してバトルへ</div>
+            </div>
+            <div class="w-full max-w-3xl mb-4">
+                <div id="equipped-weapons" class="flex justify-center gap-2 h-28 bg-slate-900/50 p-2 rounded-lg border border-slate-600"></div>
+            </div>
+            <div class="flex-1 w-full max-w-4xl overflow-y-auto bg-slate-900/30 p-2 rounded-lg border border-slate-700 mb-4 custom-scrollbar">
+                <div id="weapon-list" class="flex flex-col gap-4"></div>
+            </div>
+            <button id="btn-battle-start" class="btn-primary py-3 px-12 rounded text-xl shadow-lg w-full max-w-sm disabled:opacity-50 disabled:grayscale transition-all">バトル開始！</button>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="hidden absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center z-50 p-4">
+            <h2 id="result-title" class="text-5xl font-bold text-white mb-4 font-['Reggae_One']">VICTORY!</h2>
+            <div id="result-comment" class="text-white mb-8 text-center px-4 italic max-w-lg text-lg min-h-[3em]"></div>
+            <div class="flex gap-4">
+                <button id="btn-retry" class="btn-primary px-8 py-3 rounded text-lg shadow-lg">デッキ編成へ</button>
+                <button id="btn-to-title" class="btn-secondary px-8 py-3 rounded text-lg shadow-lg">タイトルへ</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div class="flex justify-between items-end p-2 bg-slate-800 text-white z-10 border-b border-slate-700 relative">
+            <div class="w-5/12">
+                <div class="flex justify-between text-sm mb-1"><span class="font-bold text-blue-300">YOU</span><span id="player-hp-text">100/100</span></div>
+                <div class="w-full bg-gray-700 h-4 rounded-full overflow-hidden border border-gray-600"><div id="player-hp-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 100%;"></div></div>
+            </div>
+            <div class="font-bold text-xl text-yellow-400 self-center mx-2">VS</div>
+            <div class="w-5/12 text-right">
+                <div class="flex justify-between text-sm mb-1"><span id="enemy-hp-text">100/100</span><span id="enemy-name" class="font-bold text-red-300">ENEMY</span></div>
+                <div class="w-full bg-gray-700 h-4 rounded-full overflow-hidden border border-gray-600"><div id="enemy-hp-bar" class="h-full bg-red-500 transition-all duration-300 ml-auto" style="width: 100%;"></div></div>
+            </div>
+        </div>
+
+        <!-- Main Canvas -->
+        <div class="relative flex-grow w-full bg-gray-200 overflow-hidden">
+            <canvas id="game-canvas" class="w-full h-full block"></canvas>
+            <div id="enemy-bubble" class="speech-bubble">...</div>
+            <div id="skill-display-container"></div>
+            <div id="hit-flash"></div>
+            <div id="damage-container" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="h-28 bg-slate-200 border-t-4 border-slate-300 p-2 flex items-center justify-between gap-2">
+            <div class="flex flex-col w-1/4 h-full justify-center pr-2 border-r border-slate-400/50">
+                <div class="mb-1">
+                    <div class="text-xs font-bold text-slate-600 mb-1 flex justify-between"><span>BP</span><span id="bp-text">0/10</span></div>
+                    <div class="w-full bg-gray-400 h-4 rounded border border-gray-500 relative overflow-hidden"><div id="bp-bar" class="h-full bg-yellow-400 transition-none absolute left-0 top-0" style="width: 0%;"></div></div>
+                </div>
+                <div class="text-[10px] text-slate-500 text-center mt-1">※武器ごとに確率でスキル発動</div>
+            </div>
+            <div class="flex-1 flex justify-around items-center h-full gap-1" id="weapon-buttons-container"></div>
+        </div>
+    </div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
